@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Phase 3 complete, cp-03c; Task 04 design proposal awaiting approval)
+Last updated: 2026-10-10 (Task 04 step 1, the uncloaker, built; awaiting review)
 
 ## Status at a glance
 
@@ -10,13 +10,13 @@ Last updated: 2026-10-10 (Phase 3 complete, cp-03c; Task 04 design proposal awai
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
-| 4 | Bayesian set uncloaker | Design proposed on `task/04-bayes-uncloaker`, **awaiting approval** | |
+| 4 | Bayesian set uncloaker | Step 1 (prior + uncloaker) built on `task/04-bayes-uncloaker`, **awaiting review**; step 2 (threat report) to follow | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 679 passing. `ruff check src tests` is clean.
+Tests: 679 passing on `main`; 716 on `task/04-bayes-uncloaker`. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -874,9 +874,9 @@ The proposal must cover:
 
 Then **stop** and ask the user to approve or adjust the proposal before writing any code.
 
-## Task 04 design proposal — Bayesian set uncloaker (2026-10-10, awaiting approval)
+## Task 04 design proposal — Bayesian set uncloaker (2026-10-10, approved)
 
-Branch `task/04-bayes-uncloaker`. No Task 04 code exists in the repo. The numbers below come from
+Branch `task/04-bayes-uncloaker`. The numbers below come from
 throwaway scripts run in a temp folder outside the repo, against `pokemon-showdown` 0.11.11.
 
 ### 1. Where the prior comes from
@@ -1066,7 +1066,7 @@ stays unsupported in the report (review finding R5).
 - **Speed:** one update filters at most 42 hypotheses for a species. The target of 5 ms per
   Pokémon should be met with a wide margin; a timing test will assert it.
 
-### 8. Decisions needed before any code
+### 8. Decisions asked before any code
 
 | # | Question | Recommendation |
 |---|----------|----------------|
@@ -1079,6 +1079,202 @@ stays unsupported in the report (review finding R5).
 | D7 | Accept the evaluation targets in section 5, including the 5%-deleted shift test? | Yes |
 | D8 | Add the `threat_report` function and `ThreatReport` schema in Task 04, or leave the consumer side to Phase 6? | Add it in Task 04, as a second step after the uncloaker is reviewed |
 | D9 | Package name: `poketrix.uncloak`? | Yes |
+
+### Decisions (2026-10-10, user)
+
+D1–D9: the user chose every recommendation. The prior is sampled from the official generator
+(`pokemon-showdown` 0.11.11, in its own `scripts/randbats/` folder), 100,000 teams per
+generation; a hypothesis is (species, moves, item, ability) with level and spread per set;
+ruled-out items and abilities are part of the evidence; damage-based evidence (04b) is deferred
+until after Task 05; the evaluation targets and the 5%-removed test are accepted; the threat
+report is a second step after this one is reviewed; the package is `poketrix.uncloak`.
+
+## Task 04, step 1 — the set prior and the uncloaker (built 2026-10-10, awaiting review)
+
+Branch `task/04-bayes-uncloaker`. Not merged, not tagged, not pushed.
+Tests: **716 passing** (679 before + 37 new); `ruff check src tests` is clean. The suite now takes
+about 10 seconds instead of 3, because the evaluation runs inside it.
+
+### What was built
+
+- **Generator sampling:** `scripts/randbats/build_randbats.mjs` (`npm run build-randbats`, about
+  6 minutes for all four generations). It writes two tables per generation in one format:
+  the prior and a held-out sample from a different seed.
+
+  | Gen | Prior sets (100,000 teams, seed 20261101) | Held-out sets (20,000 teams, seed 20261102) |
+  |-----|--------------------------------------------|----------------------------------------------|
+  | 1 | 431 | 431 |
+  | 2 | 559 | 559 |
+  | 3 | 1,184 | 1,184 |
+  | 4 | 1,740 | 1,723 |
+
+  The prior tables (`data/randbats/gen{N}/sets.json`) total 663 KB; the held-out tables
+  (`tests/fixtures/randbats_holdout_gen{N}.json`) 657 KB.
+- **Confirmed by the build:** level is fixed per species, and the spread is a function of the
+  set (the script fails if one set shows two spreads; it did not).
+- **Schemas:** `SetEvidence`, `PriorSet`; `SetPosterior` gained `item_probability` and
+  `ability_probability` (methods only).
+- **`poketrix.uncloak`:**
+  - `prior.py` — `SetPrior` and `load_prior(gen)`. Every row is checked against the dex and
+    becomes a full `PokemonSet`, so a hypothesis goes straight into the damage calculator.
+  - `uncloaker.py` — `Uncloaker.uncloak(species, evidence) -> SubsystemResult[SetPosterior]`,
+    with the four tiers from the proposal. It never raises.
+  - `evaluation.py` — the committed evaluation. `python -m poketrix.uncloak.evaluation` prints
+    the tables below.
+
+### Evaluation results
+
+Scored exactly, by enumerating every way to reveal k of a held-out set's moves, weighted by how
+often the generator produced the set. k = number of moves revealed.
+
+**Full prior, moves revealed**
+
+| Gen | k | True set kept | Top-1 | Top-3 | Set log-loss | Uniform log-loss | Move Brier | Move calibration error | Tier 2 | Tier 3 |
+|-----|---|---------------|-------|-------|--------------|------------------|------------|------------------------|--------|--------|
+| 1 | 0 | 100.0000% | 0.577 | 0.921 | 0.863 | 0.916 | 0.0974 | 0.0012 | 0.00% | 0.00% |
+| 1 | 1 | 100.0000% | 0.672 | 0.950 | 0.651 | 0.691 | 0.0890 | 0.0012 | 0.00% | 0.00% |
+| 1 | 2 | 100.0000% | 0.772 | 0.973 | 0.441 | 0.469 | 0.0760 | 0.0010 | 0.00% | 0.00% |
+| 1 | 3 | 100.0000% | 0.882 | 0.990 | 0.222 | 0.237 | 0.0530 | 0.0008 | 0.00% | 0.00% |
+| 1 | 4 | 100.0000% | 1.000 | 1.000 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 2 | 0 | 100.0000% | 0.450 | 0.847 | 1.131 | 1.187 | 0.1502 | 0.0012 | 0.00% | 0.00% |
+| 2 | 1 | 100.0000% | 0.590 | 0.933 | 0.759 | 0.792 | 0.1069 | 0.0014 | 0.00% | 0.00% |
+| 2 | 2 | 100.0000% | 0.725 | 0.977 | 0.469 | 0.486 | 0.0713 | 0.0014 | 0.00% | 0.00% |
+| 2 | 3 | 100.0000% | 0.861 | 0.996 | 0.221 | 0.228 | 0.0387 | 0.0010 | 0.00% | 0.00% |
+| 2 | 4 | 100.0000% | 0.993 | 1.000 | 0.010 | 0.010 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 3 | 0 | 100.0000% | 0.378 | 0.779 | 1.371 | 1.446 | 0.1581 | 0.0012 | 0.00% | 0.00% |
+| 3 | 1 | 100.0000% | 0.520 | 0.883 | 0.960 | 1.009 | 0.1182 | 0.0013 | 0.00% | 0.00% |
+| 3 | 2 | 100.0000% | 0.662 | 0.949 | 0.618 | 0.650 | 0.0838 | 0.0011 | 0.00% | 0.00% |
+| 3 | 3 | 100.0000% | 0.817 | 0.987 | 0.308 | 0.327 | 0.0479 | 0.0008 | 0.00% | 0.00% |
+| 3 | 4 | 100.0000% | 0.984 | 1.000 | 0.023 | 0.033 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 4 | 0 | 99.9975% | 0.378 | 0.764 | 1.412 | 1.517 | 0.1534 | 0.0012 | 0.00% | 0.00% |
+| 4 | 1 | 99.9975% | 0.498 | 0.859 | 1.035 | 1.107 | 0.1203 | 0.0015 | 0.00% | 0.00% |
+| 4 | 2 | 99.9975% | 0.630 | 0.932 | 0.698 | 0.746 | 0.0923 | 0.0017 | 0.00% | 0.00% |
+| 4 | 3 | 99.9975% | 0.783 | 0.982 | 0.373 | 0.403 | 0.0582 | 0.0012 | 0.00% | 0.00% |
+| 4 | 4 | 99.9975% | 0.970 | 1.000 | 0.046 | 0.058 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+
+**Full prior, moves plus item and ability revealed**
+
+| Gen | k | True set kept | Top-1 | Top-3 | Set log-loss | Uniform log-loss | Move Brier | Move calibration error | Tier 2 | Tier 3 |
+|-----|---|---------------|-------|-------|--------------|------------------|------------|------------------------|--------|--------|
+| 1 | 0 | 100.0000% | 0.577 | 0.921 | 0.863 | 0.916 | 0.0974 | 0.0012 | 0.00% | 0.00% |
+| 1 | 1 | 100.0000% | 0.672 | 0.950 | 0.651 | 0.691 | 0.0890 | 0.0012 | 0.00% | 0.00% |
+| 1 | 2 | 100.0000% | 0.772 | 0.973 | 0.441 | 0.469 | 0.0760 | 0.0010 | 0.00% | 0.00% |
+| 1 | 3 | 100.0000% | 0.882 | 0.990 | 0.222 | 0.237 | 0.0530 | 0.0008 | 0.00% | 0.00% |
+| 1 | 4 | 100.0000% | 1.000 | 1.000 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 2 | 0 | 100.0000% | 0.471 | 0.861 | 1.060 | 1.104 | 0.1423 | 0.0029 | 0.00% | 0.00% |
+| 2 | 1 | 100.0000% | 0.609 | 0.942 | 0.711 | 0.738 | 0.1017 | 0.0013 | 0.00% | 0.00% |
+| 2 | 2 | 100.0000% | 0.740 | 0.981 | 0.436 | 0.450 | 0.0681 | 0.0009 | 0.00% | 0.00% |
+| 2 | 3 | 100.0000% | 0.872 | 0.997 | 0.201 | 0.207 | 0.0372 | 0.0010 | 0.00% | 0.00% |
+| 2 | 4 | 100.0000% | 1.000 | 1.000 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 3 | 0 | 100.0000% | 0.478 | 0.849 | 1.076 | 1.121 | 0.1253 | 0.0009 | 0.00% | 0.00% |
+| 3 | 1 | 100.0000% | 0.600 | 0.922 | 0.754 | 0.781 | 0.0959 | 0.0011 | 0.00% | 0.00% |
+| 3 | 2 | 100.0000% | 0.723 | 0.968 | 0.481 | 0.496 | 0.0687 | 0.0011 | 0.00% | 0.00% |
+| 3 | 3 | 100.0000% | 0.857 | 0.994 | 0.231 | 0.237 | 0.0394 | 0.0009 | 0.00% | 0.00% |
+| 3 | 4 | 100.0000% | 1.000 | 1.000 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+| 4 | 0 | 99.9975% | 0.507 | 0.858 | 1.009 | 1.074 | 0.1121 | 0.0016 | 0.00% | 0.00% |
+| 4 | 1 | 99.9975% | 0.609 | 0.920 | 0.738 | 0.781 | 0.0903 | 0.0016 | 0.00% | 0.00% |
+| 4 | 2 | 99.9975% | 0.720 | 0.966 | 0.491 | 0.519 | 0.0707 | 0.0015 | 0.00% | 0.00% |
+| 4 | 3 | 99.9975% | 0.848 | 0.994 | 0.248 | 0.261 | 0.0451 | 0.0011 | 0.00% | 0.00% |
+| 4 | 4 | 99.9975% | 1.000 | 1.000 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 0.00% |
+
+**Prior with a random 5% of sets removed, moves revealed**
+
+| Gen | k | True set kept | Top-1 | Top-3 | Set log-loss | Uniform log-loss | Move Brier | Move calibration error | Tier 2 | Tier 3 |
+|-----|---|---------------|-------|-------|--------------|------------------|------------|------------------------|--------|--------|
+| 1 | 0 | 94.4867% | 0.553 | 0.873 | 0.841 | 0.892 | 0.1146 | 0.0254 | 0.00% | 0.00% |
+| 1 | 1 | 94.4867% | 0.640 | 0.900 | 0.635 | 0.674 | 0.1073 | 0.0245 | 0.00% | 2.16% |
+| 1 | 2 | 94.4349% | 0.732 | 0.921 | 0.430 | 0.458 | 0.0947 | 0.0217 | 0.00% | 3.32% |
+| 1 | 3 | 94.4349% | 0.834 | 0.936 | 0.217 | 0.232 | 0.0694 | 0.0166 | 0.00% | 4.47% |
+| 1 | 4 | 94.4349% | 0.944 | 0.944 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 5.57% |
+| 2 | 0 | 95.0000% | 0.442 | 0.813 | 1.096 | 1.153 | 0.1602 | 0.0157 | 0.00% | 0.00% |
+| 2 | 1 | 95.0000% | 0.574 | 0.892 | 0.731 | 0.765 | 0.1191 | 0.0176 | 0.00% | 1.42% |
+| 2 | 2 | 94.9244% | 0.698 | 0.930 | 0.449 | 0.466 | 0.0841 | 0.0164 | 0.00% | 2.50% |
+| 2 | 3 | 94.9244% | 0.823 | 0.946 | 0.210 | 0.217 | 0.0496 | 0.0139 | 0.00% | 3.68% |
+| 2 | 4 | 94.9244% | 0.943 | 0.949 | 0.009 | 0.009 | 0.0000 | 0.0000 | 0.00% | 4.97% |
+| 3 | 0 | 95.4433% | 0.373 | 0.755 | 1.328 | 1.399 | 0.1635 | 0.0112 | 0.00% | 0.00% |
+| 3 | 1 | 95.4433% | 0.509 | 0.849 | 0.926 | 0.973 | 0.1257 | 0.0125 | 0.00% | 0.64% |
+| 3 | 2 | 95.4045% | 0.642 | 0.909 | 0.595 | 0.625 | 0.0932 | 0.0123 | 0.00% | 1.63% |
+| 3 | 3 | 95.4045% | 0.786 | 0.943 | 0.296 | 0.314 | 0.0572 | 0.0095 | 0.00% | 2.94% |
+| 3 | 4 | 95.4045% | 0.939 | 0.954 | 0.023 | 0.033 | 0.0000 | 0.0000 | 0.00% | 4.50% |
+| 4 | 0 | 95.0333% | 0.370 | 0.742 | 1.371 | 1.475 | 0.1617 | 0.0159 | 0.00% | 0.00% |
+| 4 | 1 | 95.0333% | 0.484 | 0.826 | 1.003 | 1.075 | 0.1309 | 0.0162 | 0.00% | 1.08% |
+| 4 | 2 | 95.0148% | 0.607 | 0.891 | 0.674 | 0.723 | 0.1046 | 0.0157 | 0.00% | 1.90% |
+| 4 | 3 | 95.0148% | 0.750 | 0.935 | 0.360 | 0.389 | 0.0697 | 0.0145 | 0.00% | 3.04% |
+| 4 | 4 | 95.0148% | 0.923 | 0.950 | 0.045 | 0.057 | 0.0000 | 0.0000 | 0.00% | 4.76% |
+
+**Prior with a random 5% of sets removed, moves plus item and ability revealed**
+
+| Gen | k | True set kept | Top-1 | Top-3 | Set log-loss | Uniform log-loss | Move Brier | Move calibration error | Tier 2 | Tier 3 |
+|-----|---|---------------|-------|-------|--------------|------------------|------------|------------------------|--------|--------|
+| 1 | 0 | 94.4867% | 0.553 | 0.873 | 0.841 | 0.892 | 0.1146 | 0.0254 | 0.00% | 0.00% |
+| 1 | 1 | 94.4867% | 0.640 | 0.900 | 0.635 | 0.674 | 0.1073 | 0.0245 | 0.00% | 2.16% |
+| 1 | 2 | 94.4349% | 0.732 | 0.921 | 0.430 | 0.458 | 0.0947 | 0.0217 | 0.00% | 3.32% |
+| 1 | 3 | 94.4349% | 0.834 | 0.936 | 0.217 | 0.232 | 0.0694 | 0.0166 | 0.00% | 4.47% |
+| 1 | 4 | 94.4349% | 0.944 | 0.944 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.00% | 5.57% |
+| 2 | 0 | 95.0000% | 0.461 | 0.827 | 1.027 | 1.072 | 0.1534 | 0.0206 | 0.19% | 0.00% |
+| 2 | 1 | 95.0000% | 0.591 | 0.900 | 0.684 | 0.711 | 0.1146 | 0.0196 | 0.12% | 1.42% |
+| 2 | 2 | 94.9244% | 0.713 | 0.934 | 0.417 | 0.432 | 0.0814 | 0.0167 | 0.08% | 2.50% |
+| 2 | 3 | 94.9244% | 0.834 | 0.947 | 0.191 | 0.197 | 0.0483 | 0.0139 | 0.08% | 3.68% |
+| 2 | 4 | 94.9244% | 0.949 | 0.949 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.10% | 4.97% |
+| 3 | 0 | 95.4433% | 0.471 | 0.821 | 1.037 | 1.081 | 0.1321 | 0.0131 | 0.70% | 0.00% |
+| 3 | 1 | 95.4433% | 0.587 | 0.885 | 0.724 | 0.750 | 0.1048 | 0.0136 | 0.59% | 0.64% |
+| 3 | 2 | 95.4045% | 0.701 | 0.926 | 0.460 | 0.474 | 0.0793 | 0.0126 | 0.49% | 1.63% |
+| 3 | 3 | 95.4045% | 0.824 | 0.949 | 0.220 | 0.226 | 0.0493 | 0.0098 | 0.31% | 2.94% |
+| 3 | 4 | 95.4045% | 0.954 | 0.954 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.09% | 4.50% |
+| 4 | 0 | 95.0333% | 0.495 | 0.826 | 0.977 | 1.043 | 0.1230 | 0.0181 | 0.74% | 0.00% |
+| 4 | 1 | 95.0333% | 0.589 | 0.881 | 0.713 | 0.757 | 0.1030 | 0.0172 | 0.73% | 1.08% |
+| 4 | 2 | 95.0148% | 0.692 | 0.920 | 0.474 | 0.502 | 0.0847 | 0.0166 | 0.69% | 1.90% |
+| 4 | 3 | 95.0148% | 0.810 | 0.945 | 0.239 | 0.252 | 0.0579 | 0.0150 | 0.55% | 3.04% |
+| 4 | 4 | 95.0148% | 0.950 | 0.950 | 0.000 | 0.000 | 0.0000 | 0.0000 | 0.23% | 4.76% |
+
+### Against the agreed targets
+
+| Target | Result |
+|--------|--------|
+| True set keeps a non-zero posterior on tier 1 in at least 99.9% of cases | **Met:** 100% in Gens 1–3, 99.9975% in Gen 4 |
+| The uncloaker never raises | **Met:** every held-out case returns a result, also with 5% of the sets removed |
+| Move calibration error at most 0.02 at every k | **Met:** at most 0.0017 with moves only, 0.0029 with item and ability |
+| Top-1 and top-3 accuracy within 0.02 of the proposal's table | **Met** |
+| Set log-loss lower than "uniform over the sets that fit" at every k | **Met for k = 0…3. Not met at k = 4 in Gen 2:** 0.01025 against 0.01024 |
+| One update under 5 ms | **Met** for the species with the most sets (42) |
+
+**The one miss.** With all four moves known, the only thing left to guess is a near-even choice
+between items, and the prior's frequencies and the held-out sample's differ by sampling noise.
+The posterior is then no better than a coin flip, by 0.00001 nats in Gen 2. The test asserts
+"strictly lower for k ≤ 3, within 0.001 at k = 4". If you would rather keep the original target,
+the alternatives are a larger prior sample or dropping the k = 4 comparison.
+
+### What the out-of-date-prior test shows
+
+With a random 5% of sets removed:
+
+- About 5% of held-out Pokémon run a set the prior no longer knows. While nothing has been
+  revealed that contradicts a known set, the uncloaker gives the missing set probability 0;
+  tier 1 does not reserve any probability for "a set I have not seen".
+- As moves are revealed the fallbacks take over: tier 3 handles up to 5.6% of cases at k = 4,
+  and tier 2 up to 0.74% when the item and ability are shown.
+- Move calibration error rises from under 0.003 to at most 0.025.
+
+So a stale prior degrades gradually and never crashes, but it is over-confident until the
+evidence contradicts it. Whether tier 1 should hold back a small share for unseen sets is a
+question for your reviewer; I have not added it because it was not in the proposal.
+
+### Known limits
+
+- The evaluation uses teams from the same generator as the prior. It shows the implementation
+  is correct and calibrated; it cannot show accuracy on the live ladder.
+- The evidence is taken as given. Deciding what counts as a revealed move (not one called by
+  Sleep Talk or Metronome) and detecting ruled-out items is the Task 05 parser's job.
+- In tier 2 a hypothesis keeps the `set_id` of the set it came from, with the observed item or
+  ability in place of that set's own. The threat report (step 2) must build its `PokemonSet`
+  from the hypothesis fields plus the source set's spread.
+- Tier 3 fills open move slots from the species' six most frequent moves, treating them as
+  independent. It is a rough completion, not a model of the generator.
+
+### Next (after review)
+
+Step 2: `threat_report` and the `ThreatReport` schema (decision D8), then the Phase 4 merge and
+`cp-04`.
 
 ## Standing rules
 

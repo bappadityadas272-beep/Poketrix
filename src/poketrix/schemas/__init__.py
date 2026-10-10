@@ -40,5 +40,6 @@ from .pokemon import (
     gen1_2_hp_dv,
     to_id,
 )
+from .sets import PriorSet, SetEvidence
 
 __all__ = [name for name in dir() if not name.startswith("_")]

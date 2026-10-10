@@ -148,6 +148,13 @@ class SetPosterior(Strict):
         """P(opponent carries this move) = Σ posterior of sets containing it."""
         return math.fsum(h.posterior for h in self.hypotheses if move_id in h.moves)
 
+    def item_probability(self, item_id: str | None) -> float:
+        """P(opponent holds this item); `None` asks for "no item"."""
+        return math.fsum(h.posterior for h in self.hypotheses if h.item == item_id)
+
+    def ability_probability(self, ability_id: str | None) -> float:
+        return math.fsum(h.posterior for h in self.hypotheses if h.ability == ability_id)
+
 
 class ActionPrediction(Strict):
     """Opponent's next action distribution (XGBoost later; heuristic fallback earlier)."""
