@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-03c`: Phase 3 (Math layer) complete (2026-10-10)
+## Current state — checkpoint `cp-04`: Phase 4 (set uncloaker) complete (2026-10-11)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -55,6 +55,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 | cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
+| cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -107,6 +108,28 @@ Calc (`from poketrix.calc import ...`), all four generations:
   `slowstart`, `unburden`, `charge`, `focusenergy`, `foresight`, `confusion`.
 - Type chart and natures come from the snapshot: `poketrix.dex.load_type_chart(gen)`,
   `load_natures()`.
+
+Uncloak (`from poketrix.uncloak import Uncloaker, load_prior`):
+- `Uncloaker(load_prior(gen)).uncloak(species, SetEvidence(...))` returns
+  `SubsystemResult[SetPosterior]`. Status `ok` is plain Bayes over the known sets; `fallback`
+  means the evidence contradicted every known set (tiers 2 and 3); it never raises.
+- The prior is `data/randbats/gen{N}/sets.json`, sampled from Showdown's official generator
+  (`pokemon-showdown` 0.11.11, 100,000 teams). Rebuild: `cd scripts/randbats && npm install &&
+  npm run build-randbats`. That folder is separate because the install is 181 MB.
+- `SetPrior.pokemon_set(set_id)` gives the full `PokemonSet` (level and spread included) for
+  the damage calculator.
+- `threat_report(ours, theirs, posterior, prior, ...)` returns `SubsystemResult[ThreatReport]`:
+  each move the opponent may carry with its probability and its damage to our Pokémon, plus
+  `p_ko_best_move` (can they knock us out this turn?). It only joins the posterior and
+  `evaluate_move`; damage rules never go here. In a UI, "worst case" is `worst_crit_pct`.
+- `python -m poketrix.uncloak.evaluation` prints the held-out metrics; `tests/test_uncloak.py`
+  asserts the agreed targets. Paste a new table into the tracker when the prior is rebuilt.
+
+Carried forward (from the Task 04 review):
+- No probability is held back for unseen sets yet (R8). Phase 5 measures, on real replays, how
+  often revealed evidence contradicts every known set; that staleness rate decides it.
+- If the test suite keeps slowing down, give the evaluation tests a `slow` marker (R9); the
+  full suite stays mandatory before every merge.
 
 Carried forward (from the 03c review):
 - A move the calculator reports as unsupported (Counter, Bide, Present, …) must reach the user

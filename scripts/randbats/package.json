@@ -1,0 +1,12 @@
+{
+  "name": "poketrix-randbats-build",
+  "private": true,
+  "description": "Build-time only: samples Showdown's official Random Battle team generator to build the set priors. Kept apart from scripts/package.json because pokemon-showdown is a large install.",
+  "type": "module",
+  "scripts": {
+    "build-randbats": "node build_randbats.mjs"
+  },
+  "devDependencies": {
+    "pokemon-showdown": "0.11.11"
+  }
+}

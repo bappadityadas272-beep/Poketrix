@@ -148,6 +148,13 @@ class SetPosterior(Strict):
         """P(opponent carries this move) = Σ posterior of sets containing it."""
         return math.fsum(h.posterior for h in self.hypotheses if move_id in h.moves)
 
+    def item_probability(self, item_id: str | None) -> float:
+        """P(opponent holds this item); `None` asks for "no item"."""
+        return math.fsum(h.posterior for h in self.hypotheses if h.item == item_id)
+
+    def ability_probability(self, ability_id: str | None) -> float:
+        return math.fsum(h.posterior for h in self.hypotheses if h.ability == ability_id)
+
 
 class ActionPrediction(Strict):
     """Opponent's next action distribution (XGBoost later; heuristic fallback earlier)."""
@@ -162,6 +169,70 @@ class ActionPrediction(Strict):
         total = self.p_attack + self.p_switch + self.p_utility
         if abs(total - 1.0) > PROB_TOL:
             raise ValueError(f"action probabilities sum to {total:.6f}, not 1")
+        return self
+
+
+# --------------------------------------------------------------------------- threat report
+
+
+class MoveThreat(Strict):
+    """What one move the opponent may carry would do to our Pokémon.
+
+    The damage figures are conditional on the opponent having the move and on it landing,
+    taken over the set hypotheses that carry it. Percentages are of our Pokémon's maximum HP.
+
+    Two "highest damage" figures exist, and a user interface must not mix them up:
+    `worst_crit_pct` is the most this move can do and is what should be shown as "worst case";
+    `worst_case_pct` is the most it can do without a critical hit and should be labelled so.
+    """
+
+    move_id: ShowdownId
+    probability: float = Field(ge=0.0, le=1.0)  # P(the opponent carries this move)
+    expected_pct: float | None = Field(default=None, ge=0.0)  # mean damage of one normal hit
+    worst_case_pct: float | None = Field(default=None, ge=0.0)  # highest roll without a crit
+    worst_crit_pct: float | None = Field(default=None, ge=0.0)  # highest roll with a crit
+    ko_probability: float | None = Field(default=None, ge=0.0, le=1.0)  # one use, crits included
+    # Set when the calculator cannot evaluate the move: it is then unknown, never "no damage".
+    unsupported_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _unsupported_has_no_numbers(self) -> Self:
+        damage = (self.expected_pct, self.worst_case_pct, self.worst_crit_pct)
+        numbers = (*damage, self.ko_probability)
+        if self.unsupported_reason is not None and any(n is not None for n in numbers):
+            raise ValueError("an unsupported move carries no damage numbers")
+        if len({n is None for n in damage}) > 1:
+            raise ValueError("expected and worst-case damage are given together")
+        if self.expected_pct is not None:
+            if self.worst_case_pct + PROB_TOL < self.expected_pct:
+                raise ValueError("worst-case damage is below the expected damage")
+            if self.worst_crit_pct + PROB_TOL < self.worst_case_pct:
+                raise ValueError("a critical hit cannot do less than the worst normal hit")
+        return self
+
+
+class ThreatReport(Strict):
+    """The opponent's possible moves against our Pokémon, most likely first."""
+
+    attacker_species: ShowdownId
+    defender_species: ShowdownId
+    threats: list[MoveThreat] = Field(default_factory=list)
+    # "If they attack, can they knock us out this turn?": for each possible set the KO chance
+    # of its best move, weighted by how likely the set is. Moves are correlated inside a set,
+    # so this cannot be read off the per-move figures.
+    p_ko_best_move: float = Field(default=0.0, ge=0.0, le=1.0)
+    # True when a possible move could not be evaluated and so counted as 0 above: the real
+    # chance is then at least `p_ko_best_move`, never less.
+    ko_lower_bound: bool = False
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        ids = [t.move_id for t in self.threats]
+        if len(set(ids)) != len(ids):
+            raise ValueError("a move is listed twice")
+        odds = [t.probability for t in self.threats]
+        if odds != sorted(odds, reverse=True):
+            raise ValueError("threats must be ordered by probability, highest first")
         return self
 
 
