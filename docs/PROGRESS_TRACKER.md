@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 02 closed as cp-02; Task 03 design proposal awaiting approval)
+Last updated: 2026-10-10 (Task 03a built on `task/03-math-gen4`, awaiting review)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 02 closed as cp-02; Task 03 design proposal await
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | Design proposed on `task/03-math-gen4`, **awaiting approval** | |
+| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) built on `task/03-math-gen4`, **awaiting review**; 03b and 03c to follow | `cp-03a` pending |
 | 4 | Bayesian set uncloaker | Not started | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 68 passing (35 schemas + 33 dex). `ruff check src tests` is clean.
+Tests: 68 passing on `main`; 231 on `task/03-math-gen4`. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -150,9 +150,9 @@ It must cover:
 
 Then **stop** and ask the user to approve or adjust the proposal before writing any calculator code.
 
-## Task 03 design proposal — Math layer, Gen 4 first (2026-10-10, awaiting approval)
+## Task 03 design proposal — Math layer, Gen 4 first (2026-10-10, approved)
 
-Branch `task/03-math-gen4`. No calculator code exists yet. The formula below was read from the
+Branch `task/03-math-gen4`. The formula below was read from the
 source of `@smogon/calc` 0.12.0 (`mechanics/gen4.js`), the oracle we have to match.
 
 ### Corrections to the review findings
@@ -326,7 +326,7 @@ Knot, Flail, Reversal, Eruption, Water Spout, Punishment, Fling, Natural Gift, M
 Gens 1–3 (Task 03c), doubles, multi-turn effects, Monte Carlo, and building a `MathReport` straight
 from a `GameState` for the opponent (needs Task 04's set hypotheses).
 
-### Decisions needed before any code
+### Decisions asked before any code
 
 | # | Question | Recommendation |
 |---|----------|----------------|
@@ -337,6 +337,97 @@ from a `GameState` for the opponent (needs Task 04's set hypotheses).
 | Q5 | Move the **immunity abilities** (Levitate, Flash Fire, Water Absorb, Volt Absorb, Motor Drive, Dry Skin, Wonder Guard) from 03b into 03a? Without them 03a reports Earthquake damage on Gengar, Rotom and Bronzong. | Move into 03a |
 | Q6 | Add `@smogon/calc` 0.12.0 as a build-time dependency in `scripts/`? | Yes |
 | Q7 | Update the git remote to the new URL `…/Poketrix.git` reported by GitHub? | Yes |
+
+### Decisions (2026-10-10, user)
+
+Q1 export from `@pkmn/dex` · Q2 accepted · Q3 accepted · Q4 both groups · Q5 immunity abilities moved
+into 03a · Q6 `@smogon/calc` 0.12.0 added · Q7 git remote updated to `…/Poketrix.git`.
+
+## Task 03a — Gen 4 math core (built 2026-10-10, awaiting review)
+
+Branch `task/03-math-gen4`. Not merged, not tagged, not pushed.
+Tests: **231 passing** (68 before + 163 new); `ruff check src tests` is clean.
+
+### Result against the oracle
+
+- `tests/fixtures/calc_golden_gen4.json` holds **310 cases** from `@smogon/calc` 0.12.0: 90
+  hand-picked (one per mechanic, tagged) and 220 seeded-random.
+- The engine reproduces the oracle's stats and all 16 normal and 16 critical rolls **exactly** in
+  every case it evaluates: all 90 hand-picked and 215 of the 220 random ones.
+- The other 5 random cases use moves 03a declines to evaluate (Fling ×2, Trump Card, Present,
+  Punishment); the test skips them and requires at least 180 compared.
+- No formula change was needed after the first run. The only failure was a fixture mistake (a
+  hand-picked case used Pure Power, a 03b ability), fixed in the generator.
+- `@pkmn/dex` and `@smogon/calc` agree on every Gen 4 species' stats and types and on every
+  damaging move's power, type and category. Four cosmetic formes (Burmy-Sandy, Burmy-Trash,
+  Shellos-East, Gastrodon-East) are missing from the oracle and are left out of the random sweep.
+- Latency: the 4-move × 6-target report takes about **3.4 ms** (median) on this machine against the
+  5 ms target; the timing test asserts the median of 25 runs.
+
+### What was built
+
+- **Schemas:** `Move.fixed_damage`, `Move.ignores_type_chart`, `Move.crit_ratio`, `Move.multihit`,
+  `FixedDamage` enum, `Nature`, `MoveEvaluation.unsupported_reason`.
+- **Snapshot** (`scripts/build_dex.mjs`, rebuilt): the new move fields, `gen{N}/typechart.json`,
+  `natures.json`. Fixed-damage moves have base power 0 in every generation.
+- **Dex:** `load_type_chart(gen)` and `load_natures()`, validated at load.
+- **`src/poketrix/calc/`:**
+  - `typechart.py` — `effectiveness(gen, move_type, defender_types)`.
+  - `stats.py` — Gens 3–4 stat formula (cached), stat stages, current HP.
+  - `hidden_power.py` — type and power from IVs.
+  - `engine.py` — `DamageEngine` protocol, `DamageResult`, `UnsupportedMoveError`, registry.
+  - `gen4.py` — the Gen 4 engine.
+  - `ko.py` — exact 1- to 4-hit KO odds.
+  - `report.py` — `evaluate_move(...)` → `MoveEvaluation`; `build_report(...)` →
+    `SubsystemResult[MathReport]` (returns an ERROR result instead of raising).
+- **Oracle generator:** `scripts/build_calc_golden.mjs` (`npm run build-calc-golden`).
+- **Tests:** `tests/test_calc_golden.py`, `tests/test_calc.py`, additions to `test_dex.py` and
+  `test_schemas.py`, shared builders in `tests/calc_helpers.py`.
+
+### What the Gen 4 engine covers in 03a
+
+- The core formula, STAB, both type factors in canonical order, critical hits, burn, Reflect and
+  Light Screen (Brick Break ignores them), sun and rain, Solar Beam in bad weather, sandstorm's
+  Special Defense boost for Rock-types, Explosion and Self-Destruct.
+- Immunities: type immunity, Levitate, Flash Fire, Water Absorb, Dry Skin (Water), Volt Absorb,
+  Motor Drive, Wonder Guard (with its typeless and Fire Fang exceptions).
+- Added beyond the Q5 list because they decide immunity or weather and cost a line each: Mold
+  Breaker, Scrappy, Foresight, Gravity, Air Lock, Cloud Nine, and Sturdy against OHKO moves.
+- Fixed damage: flat amounts, level-based, Super Fang, Endeavor, OHKO moves (accuracy from the
+  level difference). Type immunity is checked first.
+- Variable power: Return, Frustration, Eruption, Water Spout, Flail, Reversal, Brine, Facade,
+  Wake-Up Slap, Crush Grip, Wring Out, Weather Ball.
+- Typeless damage: Struggle, Future Sight, Doom Desire.
+- Hidden Power: derived from the set's IVs when any are listed; otherwise the typed entry at 70.
+
+### Reported as unsupported, never guessed
+
+`MoveEvaluation.unsupported_reason` is set and no numbers are given for: multi-hit moves; Counter,
+Mirror Coat, Metal Burst and Bide; Psywave; untyped Hidden Power without IVs; Payback, Gyro Ball,
+Punishment and Beat Up; and variable-power moves without a rule yet (Low Kick, Grass Knot, Fling,
+Natural Gift, Magnitude, Present, Trump Card, Spit Up).
+
+### Known limits of 03a (by design, until 03b)
+
+- **Held items and all other abilities are ignored.** A Choice Band, Life Orb, Technician or Thick
+  Fat holder gets the unmodified number, not an "unsupported" marker.
+- Exact KO odds assume nothing else changes HP between hits.
+- When only the displayed HP fraction is known, current HP is that fraction of max HP, rounded.
+- Future Sight and Doom Desire are given the normal crit chance; Gravity's accuracy boost is not
+  applied.
+- Gens 1–3 have no engine yet (`engine_for(3)` raises `NotImplementedError`).
+
+### Open questions for review
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| R1 | **Gyro Ball and Punishment:** from the oracle's source, Gyro Ball is `floor(25 × target Speed / user Speed)` and Punishment counts only the five battle stats. As I recall the Showdown simulator, it adds 1 to Gyro Ball and also counts accuracy and evasion boosts for Punishment; I have not verified that against its source. Which do we follow? | Verify against the simulator source in 03b, follow the simulator, and exclude the disputed part from the golden comparison |
+| R2 | **Psywave** has 11 possible outcomes, but `DamageRange` accepts only 1 or 16 rolls. Relax the validator, or leave Psywave unsupported? | Leave unsupported; it is not a competitive move |
+| R3 | The fixture is 266 KB, above the 150 KB estimate. Keep all 310 cases? | Keep |
+| R4 | Should 03b mark a move as unsupported when the attacker or defender has an item or ability the engine does not model yet, instead of returning the unmodified number? | Yes, once 03b defines the list of modelled items and abilities |
+
+On approval: merge `--no-ff`, tag `cp-03a`, log it, push; then 03b (items, the remaining abilities,
+crit-stage modifiers, multi-hit and weight-based moves).
 
 ## Standing rules
 

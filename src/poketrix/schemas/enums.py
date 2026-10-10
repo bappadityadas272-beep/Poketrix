@@ -41,6 +41,17 @@ class MoveCategory(str, Enum):
     STATUS = "status"
 
 
+class FixedDamage(str, Enum):
+    """How a move deals damage when it bypasses the damage formula (an int is a flat amount)."""
+
+    LEVEL = "level"  # Seismic Toss, Night Shade
+    HALF_TARGET_HP = "half_hp"  # Super Fang
+    PSYWAVE = "psywave"  # random multiple of the user's level
+    TARGET_TO_USER_HP = "endeavor"
+    OHKO = "ohko"
+    REACTIVE = "reactive"  # Counter, Mirror Coat, Metal Burst, Bide: depends on damage taken
+
+
 class Stat(str, Enum):
     HP = "hp"
     ATK = "atk"

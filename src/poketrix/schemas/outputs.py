@@ -74,9 +74,17 @@ class KOChance(Strict):
 
 class MoveEvaluation(Strict):
     move_id: ShowdownId
-    damage: DamageRange | None = None  # None for status moves
+    damage: DamageRange | None = None  # None for status moves and unsupported moves
+    # Why the Math layer produced no damage for a damaging move. Never a guessed number instead.
+    unsupported_reason: str | None = None
     ko: list[KOChance] = Field(default_factory=list)
     accuracy: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _unsupported_has_no_numbers(self) -> Self:
+        if self.unsupported_reason is not None and (self.damage is not None or self.ko):
+            raise ValueError("an unsupported move carries no damage or KO numbers")
+        return self
 
 
 class MathReport(Strict):

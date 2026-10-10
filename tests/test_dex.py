@@ -1,12 +1,12 @@
-"""Task 02 acceptance tests: the committed Gen 1-4 dex snapshot and the `Dex` lookup API."""
+"""The committed Gen 1-4 dex snapshot and the `Dex` lookup API (Task 02, extended in Task 03)."""
 
 import json
 
 import pytest
 from pydantic import ValidationError
 
-from poketrix.dex import Dex, UnknownDexEntryError
-from poketrix.schemas import Generation, MoveCategory, PokemonType, rules_for
+from poketrix.dex import Dex, UnknownDexEntryError, load_natures, load_type_chart
+from poketrix.schemas import FixedDamage, Generation, MoveCategory, PokemonType, Stat, rules_for
 
 GENS = list(Generation)
 
@@ -163,3 +163,58 @@ def test_duplicate_id_in_snapshot_fails_at_load(tmp_path):
 def test_missing_snapshot_names_the_rebuild_script(tmp_path):
     with pytest.raises(FileNotFoundError, match="build_dex"):
         Dex(1, data_dir=tmp_path)
+
+
+# --------------------------------------------------------------------------- Task 03 additions
+
+
+def test_fixed_damage_moves_are_marked_and_carry_no_base_power():
+    assert Dex(4).move("seismictoss").fixed_damage is FixedDamage.LEVEL
+    assert Dex(4).move("sonicboom").fixed_damage == 20
+    assert Dex(4).move("dragonrage").fixed_damage == 40
+    assert Dex(4).move("superfang").fixed_damage is FixedDamage.HALF_TARGET_HP
+    assert Dex(4).move("fissure").fixed_damage is FixedDamage.OHKO
+    assert Dex(4).move("counter").fixed_damage is FixedDamage.REACTIVE
+    assert Dex(4).move("earthquake").fixed_damage is None
+    for gen in GENS:  # Showdown's Gen 1 placeholder power of 1 is normalised to 0
+        assert all(m.base_power == 0 for m in Dex(gen).all_moves() if m.fixed_damage is not None)
+
+
+def test_typeless_damage_moves_per_generation():
+    assert Dex(1).move("bide").ignores_type_chart  # F2: not blocked by Ghost
+    assert not Dex(1).move("struggle").ignores_type_chart  # Normal-type in Gen 1
+    assert all(Dex(g).move("struggle").ignores_type_chart for g in (2, 3, 4))
+    assert Dex(4).move("futuresight").ignores_type_chart
+    assert not Dex(4).move("earthquake").ignores_type_chart
+
+
+def test_crit_ratio_and_multihit_are_exported():
+    assert Dex(4).move("stoneedge").crit_ratio == 2
+    assert Dex(4).move("earthquake").crit_ratio == 1
+    assert Dex(4).move("pinmissile").multihit == (2, 5)
+    assert Dex(4).move("doublekick").multihit == (2, 2)
+    assert Dex(4).move("earthquake").multihit is None
+
+
+@pytest.mark.parametrize("gen", GENS)
+def test_type_chart_covers_exactly_the_generations_types(gen):
+    chart = load_type_chart(gen)
+    assert set(chart) == rules_for(gen).pokemon_types
+    assert len(chart) == (15 if gen == 1 else 17)
+
+
+def test_natures_table():
+    natures = load_natures()
+    assert len(natures) == 25
+    assert (natures["adamant"].plus, natures["adamant"].minus) == (Stat.ATK, Stat.SPA)
+    assert natures["hardy"].plus is None and natures["hardy"].minus is None
+    assert sum(n.plus is None for n in natures.values()) == 5
+
+
+def test_bad_type_chart_fails_at_load(tmp_path):
+    (tmp_path / "gen1").mkdir()
+    (tmp_path / "gen1" / "typechart.json").write_text(
+        json.dumps({"normal": {"steel": 0.5}}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="steel"):
+        load_type_chart(Generation.RBY, tmp_path)

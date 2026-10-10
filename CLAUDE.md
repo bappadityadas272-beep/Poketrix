@@ -45,13 +45,14 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-02` (2026-10-10)
+## Current state — `cp-02` merged; Task 03a built on `task/03-math-gen4`, awaiting review (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
 | cp-00 | Project skeleton (pyproject, src layout, pytest, checkpoint workflow) |
 | cp-01 | `src/poketrix/schemas/` — gen-aware contracts, 35 passing tests |
 | cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
+| (cp-03a pending) | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -79,10 +80,22 @@ Dex (`from poketrix.dex import Dex, UnknownDexEntryError`):
   - Abilities are empty in Gens 1–2 and limited to those existing in that gen from Gen 3.
   - Learnsets are deferred.
 
+Calc (`from poketrix.calc import ...`), Gen 4 only so far:
+- `evaluate_move(attacker, defender, move, field, defender_conditions) -> MoveEvaluation` and
+  `build_report(...) -> SubsystemResult[MathReport]`. Both Pokémon need a `known_set`.
+- One engine per generation behind the `DamageEngine` protocol (`engine.py`); `gen4.py` is the
+  only one registered. Add Gens 3 → 1 as new engines, never by branching inside `gen4.py`.
+- The oracle is `@smogon/calc` 0.12.0: `tests/fixtures/calc_golden_gen4.json` (rebuild with
+  `cd scripts && npm run build-calc-golden`). Every roll must match exactly; when adding a
+  mechanic, add tagged cases to the generator first.
+- A move the engine cannot evaluate returns `unsupported_reason`, never a guessed number.
+- 03a ignores held items and all abilities except the immunity ones; that is Task 03b.
+- Type chart and natures come from the snapshot: `poketrix.dex.load_type_chart(gen)`,
+  `load_natures()`.
+
 Known, deliberate gaps:
 - `BattlePokemon.volatiles` is a free-form id set. Tighten it once the Showdown parser shows the
   real set.
-- Natures are stored as ids. The 25-nature table belongs to the Math layer.
 - No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
 
 ## ▶ START HERE
