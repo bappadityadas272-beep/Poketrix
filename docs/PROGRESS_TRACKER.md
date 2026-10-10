@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Task 04 step 2, the threat report, built; awaiting review)
+Last updated: 2026-10-11 (Task 04 step 2 approved with two additions; orders 5–6 issued: close Phase 4, propose Phase 5)
 
 ## Status at a glance
 
@@ -10,8 +10,8 @@ Last updated: 2026-10-11 (Task 04 step 2, the threat report, built; awaiting rev
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
-| 4 | Bayesian set uncloaker | Step 1 (prior + uncloaker) approved; step 2 (threat report) built on `task/04-bayes-uncloaker`, **awaiting review** | `cp-04` pending |
-| 5 | Showdown battle-log parser → `GameState` | Not started | |
+| 4 | Bayesian set uncloaker | Steps 1 and 2 **approved**; additions R6–R7, then merge + tag (Order 5) | `cp-04` |
+| 5 | Showdown battle-log parser → `GameState` | Next: design proposal (Order 6) | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
@@ -1276,7 +1276,7 @@ question for your reviewer; I have not added it because it was not in the propos
 Step 2: `threat_report` and the `ThreatReport` schema (decision D8), then the Phase 4 merge and
 `cp-04`.
 
-## Task 04, step 2 — the threat report (built 2026-10-11, awaiting review)
+## Task 04, step 2 — the threat report (approved 2026-10-11, with additions R6–R7)
 
 Branch `task/04-bayes-uncloaker`. Not merged, not tagged, not pushed.
 Tests: **725 passing** (716 before + 9 new); `ruff check src tests` is clean.
@@ -1345,6 +1345,109 @@ well inside the 150 ms ML budget per turn.
 
 On approval: merge `--no-ff`, tag `cp-04`, log it, push. That completes Phase 4. Next is Phase 5,
 the Showdown battle-log parser, starting with a design proposal.
+
+## Review of Task 04, step 2 (2026-10-11, reviewer: Claude in claude.ai, on behalf of the user)
+
+Verdict: **APPROVED**, subject to two small additions (R6, R7) before the merge. They are pre-approved:
+if their acceptance checks pass, merge without another stop.
+
+I checked the following on the user's machine:
+
+- **Tests:** 725 of 725 pass on `481e479`, the working tree is clean, and R1 worked (`.gitattributes` is in, with no
+  line-ending noise).
+- **Reuse:** the threat report adds no calculator code and shares one evaluation per (item, ability, spread)
+  combination. That's the right design.
+- **R5:** honoured. Unsupported moves carry a reason and no numbers.
+- **Tier 2 and 3 fallbacks** produce valid reports.
+
+### Findings
+
+- **R6: "worst case" leaves out critical hits. Fix before the merge.** `worst_case_pct` is the highest
+  *normal* roll. In the overlay, "worst case 48%" would be false when a crit does 72%, and crits are
+  common in Gen 1 (fast Pokémon land them about 20% of the time). Keep the field, but add
+  `worst_crit_pct` (the highest critical roll among the hypotheses that carry the move) and have the
+  docstring say plainly which one the UI should call "worst case". Leave `expected_pct` as it is (a normal hit,
+  conditional on the move existing). It is honestly labelled, and `ko_probability` covers accuracy and crits.
+- **R7: one headline number per matchup. Add before the merge.** The per-move marginals can't
+  answer the question the overlay actually needs: *"if they attack, can they KO me this turn?"* That's because
+  moves are correlated inside a set. Add to `ThreatReport`:
+  - `p_ko_best_move = Σ_h P(h) · max_{m ∈ h} KO(m, h)`, the posterior-weighted chance that the
+    opponent's best move for each set KOs us. Unsupported and status moves count as 0 inside the max, and
+    the report notes `ko_lower_bound=True` whenever an unsupported move had a non-zero
+    probability, so the number is a lower bound and never overstated.
+  - `p_has_ohko_move = Σ_h P(h) · [max_{m ∈ h} KO(m, h) ≥ 0.5]` is optional. Skip it if it adds noise.
+  These are pure aggregation over results the report already computes. They add no calculator calls.
+- **R8: holding back probability for unseen sets. Decision: not now, measure first.** The prior is pinned to
+  `pokemon-showdown` 0.11.11, while the live ladder's Random Battle sets change between Showdown releases,
+  so staleness is the real risk. But the 5%-removed test shows the fallbacks catch it without crashing, and
+  any hold-back size picked today would be a guess. Phase 5 will measure, on real replays, how often a revealed
+  move contradicts every tier-1 set (the *staleness rate*), and that number decides whether to add
+  a hold-back, a rebuild cadence, or both. This follows the "upgrade only when proven" rule.
+- **R9: test speed. Optional.** The suite went from 3 s to 14 s because the evaluation runs inside it. If it
+  keeps growing, add a `slow` pytest marker for the evaluation tests (`pytest -m "not slow"` for quick
+  runs), with the full suite still required before every merge. Don't do this now.
+
+## Orders for Claude Code, batch 3 (do these in order, stopping where marked)
+
+### Order 5: R6 + R7, then close Phase 4 (pre-approved, no stop if the checks pass)
+1. On `task/04-bayes-uncloaker`, add `worst_crit_pct` to `MoveThreat` (R6), and add `p_ko_best_move` and
+   `ko_lower_bound` to `ThreatReport` (R7). Update the docstrings and this tracker's "What a `MoveThreat` says"
+   table.
+2. Acceptance checks. Each needs a test:
+   - `worst_crit_pct >= worst_case_pct` wherever both are set.
+   - A hand-built 2-set posterior where only set A carries an OHKO move gives `p_ko_best_move` equal to
+     P(A) times that move's KO probability, worked out by hand in the test.
+   - With an unsupported move at non-zero probability, `ko_lower_bound` is `True`.
+   - `p_ko_best_move` lies between the largest single `ko_probability × probability` and the sum over all
+     moves of `ko_probability × probability`. That's a sanity bound; check it on 50 random held-out cases.
+   - Full `pytest` green, `ruff` clean, and the report still under 50 ms in the timing test.
+3. If all checks pass: run `git switch main`, then `git merge --no-ff task/04-bayes-uncloaker`, then
+   `git tag -a cp-04 -m "Bayesian set uncloaker + threat report"`. Log it in `docs/CHECKPOINTS.md`, mark Phase 4
+   as done here and in `README.md`, and run `git push origin main --tags`. Report the result in one line under this order.
+   If any check fails, **stop** and report instead of merging.
+
+### Order 6: Phase 5 design proposal, the Showdown battle-log parser. **STOP after the proposal.**
+Branch: `task/05-showdown-parser`. Write the proposal as a new section in this tracker.
+Phase 5 is a **pure library**: Showdown protocol text in, then `GameState` snapshots plus uncloaker evidence
+out. No live connection, browser extension or WebSocket client; those come later. The proposal must cover:
+
+1. **Inputs and two viewpoints.**
+   - **Spectator mode** is a saved replay log. There is no `|request|`, so both sides are only what has been revealed.
+   - **Player mode** is a live log plus our `|request|` JSON, which gives our full team and `ActionRequest`.
+   Both must produce valid `GameState`s. First read the protocol documentation (`sim/SIM-PROTOCOL.md` in
+   the pinned `pokemon-showdown` 0.11.11) and list the message types we handle and the ones we ignore on purpose.
+2. **Architecture.** I recommend an event-sourced design: `parse_line -> Event` (typed Pydantic events) →
+   `reduce(state, event) -> state` → an immutable `GameState` snapshot at each `|turn|`. That makes every turn
+   replayable and testable, and it gives Phase 7 (XGBoost) its training rows for free. Propose an alternative
+   only if it is clearly simpler.
+3. **HP and identity details.** Spectator HP is shown as a percentage (check whether any Gen 1–4 format uses
+   another scale). Map nicknames to species with `|switch|`/`|drag|` details, handle `|detailschange|`
+   and forme changes (Rotom, Giratina, Deoxys, Castform), level from details, and Gen 1–2 specifics.
+4. **Evidence rules for the uncloaker.** List each rule with a test case. This is where wrong data would quietly
+   corrupt the posterior.
+   - A move counts as revealed only when the Pokémon chose it. Exclude calls through Sleep Talk, Metronome,
+     Mirror Move, Copycat, Assist, Me First, Snatch and Magic Coat (the `[from]` tags). Handle Transform and
+     Gen 1 Mimic, where moves used while transformed are not the user's own.
+   - Items come from `-item`, `-enditem` (consumed, eaten, knocked off), Leftovers and Black Sludge healing via
+     `[from] item:`, and **Trick/Switcheroo swaps**: the received item is not the original set's item.
+     Choice lock is inferred.
+   - Abilities come from `-ability` and `[from] ability:` tags (Intimidate, Pressure, Sand Stream, …).
+   - Ruled-out evidence, only where it is certain. Example: a Pokémon that was damaged and ended the turn on the field
+     without a Leftovers heal in Gen 2+ doesn't hold Leftovers. Propose the exact list, and exclude anything ambiguous.
+5. **Real-data corpus and validation.** Propose N public Gen 1–4 Random Battle replays (`gen1randombattle` …
+   `gen4randombattle`), with the source and a download script (Node or Python, at build time). **Ask before
+   downloading.** Checks:
+   - every replay parses with no exception, and every turn snapshot validates against the schemas;
+   - the final state agrees with the log (fainted counts against `|win|`, the last HP values);
+   - parse and update time per event is under 1 ms, well inside the 50 ms ingest budget;
+   - **R8 staleness rate:** for every opponent Pokémon, the share whose revealed evidence contradicts all tier-1
+     sets, per generation. Report it, because it decides the hold-back question.
+   - Commit a small sample of replays (license and size permitting) as offline fixtures; keep the rest in git-ignored `data/raw/`.
+6. **Out of scope:** the live client and overlay, doubles, team preview (no Gen 1–4 singles format uses it), and Phase 6 orchestration.
+7. **Decisions to ask the user,** with a recommendation for each: the architecture, corpus size and source, the list of
+   ruled-out evidence rules, and which fixtures to commit.
+
+Then **stop** and ask the user to approve or adjust the proposal before writing any parser code.
 
 ## Standing rules
 
