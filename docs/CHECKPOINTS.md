@@ -27,3 +27,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 | cp-01 | Shared Pydantic schemas (gen 1-4 aware) | 2026-10-10 | 35 passed |
 | cp-02 | Dex data layer, Gens 1-4 (`@pkmn/dex` snapshot) | 2026-10-10 | 68 passed |
 | cp-03a | Math layer 03a: Gen 4 damage core, exact KO odds, oracle fixtures | 2026-10-10 | 231 passed |
+| cp-03b | Math layer 03b: Gen 4 items, abilities, multi-hit and remaining moves | 2026-10-10 | 352 passed |

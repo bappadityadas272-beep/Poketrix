@@ -5,8 +5,8 @@
 //
 // Each case records the full input plus the oracle's stats and its 16 normal and 16 critical
 // rolls (a single number for fixed damage and immunities). poketrix.calc must match them exactly.
-// Two groups: hand-picked cases, one per mechanic, and a seeded random sweep that catches
-// rounding-order mistakes. Stage 03a has no held items, so no case uses one.
+// Two groups: hand-picked cases, one per mechanic, and a seeded random sweep (items and abilities
+// included) that catches rounding-order mistakes.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -19,13 +19,14 @@ const { ABILITIES, calculate, Field, Generations, Move, Pokemon } = calc;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEX_DIR = join(HERE, '..', 'data', 'dex', 'gen4');
 const OUT_FILE = join(HERE, '..', 'tests', 'fixtures', 'calc_golden_gen4.json');
-const SWEEP_SIZE = 220;
-const SWEEP_SEED = 20261010;
+const SWEEP_SIZE = 300;
+const SWEEP_SEED = 20261011;
 
 const gen = Generations.get(4);
 const readDex = (name) => JSON.parse(readFileSync(join(DEX_DIR, name), 'utf8'));
 const SPECIES = readDex('species.json').filter((s) => gen.species.get(s.id));
 const MOVES = readDex('moves.json');
+const ITEMS = readDex('items.json');
 const speciesByName = new Map(SPECIES.map((s) => [s.name, s]));
 
 const toID = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -41,7 +42,8 @@ function oraclePokemon(side) {
   return new Pokemon(gen, side.species, {
     level: side.level,
     ability: ABILITY_NAME.get(side.ability),
-    abilityOn: false,
+    abilityOn: side.ability_on,
+    item: side.item ?? undefined,
     nature: side.nature,
     ivs: side.ivs,
     evs: side.evs,
@@ -51,7 +53,15 @@ function oraclePokemon(side) {
   });
 }
 
-const rollList = (damage) => (typeof damage === 'number' ? [damage] : damage);
+const perHit = (damage) => (Array.isArray(damage) && Array.isArray(damage[0]) ? damage : [damage]);
+const rollList = (damage) => {
+  const first = perHit(damage)[0];
+  return typeof first === 'number' ? [first] : first;
+};
+const laterHitsDiffer = (damage) => {
+  const hits = perHit(damage).map((rolls) => JSON.stringify(rolls));
+  return hits.some((rolls) => rolls !== hits[0]);
+};
 
 function runCase(spec) {
   const attacker = fillSide(spec.attacker);
@@ -67,9 +77,25 @@ function runCase(spec) {
         isForesight: field.foresight,
       },
     });
+  const moveOptions = { ability: ABILITY_NAME.get(attacker.ability), item: attacker.item ?? undefined };
   const run = (isCrit) =>
-    calculate(gen, oraclePokemon(attacker), oraclePokemon(defender), new Move(gen, spec.move, { isCrit }), oracleField());
+    calculate(
+      gen,
+      oraclePokemon(attacker),
+      oraclePokemon(defender),
+      new Move(gen, spec.move, { ...moveOptions, isCrit }),
+      oracleField(),
+    );
   const normal = run(false);
+  const expected = {
+    attacker_stats: normal.attacker.rawStats,
+    defender_stats: normal.defender.rawStats,
+    rolls: rollList(normal.damage),
+    crit_rolls: rollList(run(true).damage),
+    // A multi-hit move comes back as one roll list per hit; they are identical unless something
+    // changes between hits (a resist berry is eaten after the first).
+    later_hits_differ: laterHitsDiffer(normal.damage),
+  };
   return {
     id: spec.id,
     tags: spec.tags,
@@ -77,12 +103,7 @@ function runCase(spec) {
     defender,
     move: spec.move,
     field,
-    expected: {
-      attacker_stats: normal.attacker.rawStats,
-      defender_stats: normal.defender.rawStats,
-      rolls: rollList(normal.damage),
-      crit_rolls: rollList(run(true).damage),
-    },
+    expected,
   };
 }
 
@@ -94,7 +115,11 @@ function fillSide(side) {
   if (!species.possible_abilities.includes(ability) || !ABILITY_NAME.has(ability)) {
     throw new Error(`${side.species} cannot have ${ability}`);
   }
-  return { level: 100, nature: 'Serious', ivs: {}, evs: {}, boosts: {}, status: null, hp: null, ...side, ability };
+  if (side.item && !ITEMS.some((item) => item.name === side.item)) {
+    throw new Error(`unknown item ${side.item}`);
+  }
+  const defaults = { level: 100, nature: 'Serious', ivs: {}, evs: {}, boosts: {}, status: null, hp: null, item: null, ability_on: false };
+  return { ...defaults, ...side, ability };
 }
 
 // ----------------------------------------------------------------------------- hand-picked
@@ -221,25 +246,136 @@ const HAND_PICKED = [
   pick(['scrappy'], mon('Kangaskhan', { ability: 'Scrappy', evs: { atk: 252 } }), 'Return', GENGAR),
   pick(['foresight'], SNORLAX, 'Body Slam', GENGAR, { foresight: true }),
   pick(['foresight', 'fighting'], INFERNAPE, 'Close Combat', GENGAR, { foresight: true }),
+
+  // ---- 03b: attacker items
+  pick(['choice-band'], mon('Garchomp', { ...GARCHOMP, item: 'Choice Band' }), 'Earthquake', SWAMPERT),
+  pick(['choice-band-special-unaffected'], mon('Starmie', { ...STARMIE, item: 'Choice Band' }), 'Surf', SWAMPERT),
+  pick(['choice-specs'], mon('Starmie', { ...STARMIE, item: 'Choice Specs' }), 'Surf', SWAMPERT),
+  pick(['life-orb'], mon('Starmie', { ...STARMIE, item: 'Life Orb' }), 'Ice Beam', GARCHOMP),
+  pick(['life-orb', 'physical'], mon('Garchomp', { ...GARCHOMP, item: 'Life Orb' }), 'Outrage', SWAMPERT),
+  pick(['expert-belt-super-effective'], mon('Infernape', { ...INFERNAPE, item: 'Expert Belt' }), 'Close Combat', TYRANITAR),
+  pick(['expert-belt-neutral'], mon('Infernape', { ...INFERNAPE, item: 'Expert Belt' }), 'Close Combat', SWAMPERT),
+  pick(['muscle-band'], mon('Garchomp', { ...GARCHOMP, item: 'Muscle Band' }), 'Earthquake', SWAMPERT),
+  pick(['wise-glasses'], mon('Starmie', { ...STARMIE, item: 'Wise Glasses' }), 'Surf', SWAMPERT),
+  pick(['type-item'], mon('Infernape', { ...INFERNAPE, item: 'Charcoal' }), 'Flamethrower', SWAMPERT),
+  pick(['type-item-other-type'], mon('Infernape', { ...INFERNAPE, item: 'Charcoal' }), 'Close Combat', SWAMPERT),
+  pick(['plate'], mon('Garchomp', { ...GARCHOMP, item: 'Earth Plate' }), 'Earthquake', SWAMPERT),
+  pick(['incense'], mon('Starmie', { ...STARMIE, item: 'Sea Incense' }), 'Surf', INFERNAPE),
+  pick(['silk-scarf-struggle'], mon('Snorlax', { ...SNORLAX, item: 'Silk Scarf' }), 'Struggle', SWAMPERT),
+  pick(['adamant-orb'], mon('Dialga', { item: 'Adamant Orb' }), 'Draco Meteor', SWAMPERT),
+  pick(['adamant-orb-other-type'], mon('Dialga', { item: 'Adamant Orb' }), 'Flamethrower', SWAMPERT),
+  pick(['lustrous-orb'], mon('Palkia', { item: 'Lustrous Orb' }), 'Surf', INFERNAPE),
+  pick(['griseous-orb'], mon('Giratina-Origin', { item: 'Griseous Orb' }), 'Shadow Force', STARMIE),
+  pick(['griseous-orb-wrong-forme'], mon('Giratina', { item: 'Griseous Orb' }), 'Shadow Force', STARMIE),
+  pick(['soul-dew-attack'], mon('Latios', { item: 'Soul Dew' }), 'Dragon Pulse', SWAMPERT),
+  pick(['soul-dew-defense'], STARMIE, 'Surf', mon('Latias', { item: 'Soul Dew' })),
+  pick(['light-ball'], mon('Pikachu', { item: 'Light Ball' }), 'Thunderbolt', STARMIE),
+  pick(['light-ball', 'physical'], mon('Pikachu', { item: 'Light Ball' }), 'Volt Tackle', STARMIE),
+  pick(['thick-club'], mon('Marowak', { ability: 'Rock Head', item: 'Thick Club' }), 'Earthquake', TYRANITAR),
+  pick(['deep-sea-tooth'], mon('Clamperl', { item: 'Deep Sea Tooth' }), 'Surf', INFERNAPE),
+  pick(['deep-sea-scale'], STARMIE, 'Thunderbolt', mon('Clamperl', { item: 'Deep Sea Scale' })),
+  pick(['metal-powder'], GARCHOMP, 'Earthquake', mon('Ditto', { item: 'Metal Powder' })),
+  pick(['metronome-first-use'], mon('Garchomp', { ...GARCHOMP, item: 'Metronome' }), 'Earthquake', SWAMPERT),
+  pick(['klutz-ignores-item'], mon('Lopunny', { ability: 'Klutz', item: 'Choice Band' }), 'Return', SWAMPERT),
+  // ---- 03b: defender items
+  pick(['resist-berry'], INFERNAPE, 'Flamethrower', mon('Skarmory', { ...SKARMORY, item: 'Occa Berry' })),
+  pick(['resist-berry-not-super-effective'], INFERNAPE, 'Flamethrower', mon('Swampert', { ...SWAMPERT, item: 'Occa Berry' })),
+  pick(['chilan-berry'], SNORLAX, 'Return', mon('Swampert', { ...SWAMPERT, item: 'Chilan Berry' })),
+  pick(['resist-berry', 'expert-belt'], mon('Starmie', { ...STARMIE, item: 'Expert Belt' }), 'Ice Beam', mon('Garchomp', { ...GARCHOMP, item: 'Yache Berry' })),
+  pick(['iron-ball-grounds-flying'], GARCHOMP, 'Earthquake', mon('Skarmory', { ...SKARMORY, item: 'Iron Ball' })),
+  pick(['iron-ball-grounds-levitate'], GARCHOMP, 'Earthquake', mon('Gengar', { ...GENGAR, item: 'Iron Ball' })),
+  // ---- 03b: attacker abilities
+  pick(['technician'], mon('Scizor', { ability: 'Technician', evs: { atk: 252 } }), 'Bullet Punch', TYRANITAR),
+  pick(['technician-over-60'], mon('Scizor', { ability: 'Technician', evs: { atk: 252 } }), 'X-Scissor', TYRANITAR),
+  pick(['technician', 'type-item'], mon('Scizor', { ability: 'Technician', item: 'Metal Coat' }), 'Bullet Punch', TYRANITAR),
+  pick(['adaptability'], mon('Porygon-Z', { ability: 'Adaptability', evs: { spa: 252 } }), 'Tri Attack', SWAMPERT),
+  pick(['huge-power'], mon('Azumarill', { ability: 'Huge Power', evs: { atk: 252 } }), 'Waterfall', INFERNAPE),
+  pick(['pure-power'], mon('Medicham', { evs: { atk: 252 } }), 'High Jump Kick', TYRANITAR),
+  pick(['guts-burned'], mon('Heracross', { ability: 'Guts', status: 'brn', evs: { atk: 252 } }), 'Close Combat', SWAMPERT),
+  pick(['guts-no-status'], mon('Heracross', { ability: 'Guts', evs: { atk: 252 } }), 'Close Combat', SWAMPERT),
+  pick(['hustle'], mon('Togekiss', { ability: 'Hustle' }), 'Aerial Ace', INFERNAPE),
+  pick(['solar-power'], mon('Sunflora', { ability: 'Solar Power' }), 'Energy Ball', SWAMPERT, { weather: 'sunnyday' }),
+  pick(['flower-gift-attack'], mon('Cherrim'), 'Return', SWAMPERT, { weather: 'sunnyday' }),
+  pick(['flower-gift-defense'], STARMIE, 'Psychic', mon('Cherrim'), { weather: 'sunnyday' }),
+  pick(['slow-start-active'], mon('Regigigas', { ability_on: true }), 'Return', SWAMPERT),
+  pick(['blaze-pinch'], mon('Infernape', { ...INFERNAPE, hp: 90 }), 'Flamethrower', SWAMPERT),
+  pick(['blaze-above-third'], mon('Infernape', { ...INFERNAPE, hp: 120 }), 'Flamethrower', SWAMPERT),
+  pick(['torrent-pinch'], mon('Swampert', { ...SWAMPERT, hp: 100 }), 'Surf', INFERNAPE),
+  pick(['overgrow-pinch'], mon('Venusaur', { hp: 50 }), 'Energy Ball', SWAMPERT),
+  pick(['swarm-pinch'], mon('Heracross', { ability: 'Swarm', hp: 60 }), 'Megahorn', STARMIE),
+  pick(['iron-fist'], mon('Hitmonchan', { ability: 'Iron Fist' }), 'Mach Punch', TYRANITAR),
+  pick(['iron-fist-not-a-punch'], mon('Hitmonchan', { ability: 'Iron Fist' }), 'Close Combat', TYRANITAR),
+  pick(['reckless'], mon('Hitmonlee', { ability: 'Reckless' }), 'Double-Edge', SWAMPERT),
+  pick(['reckless-crash'], mon('Hitmonlee', { ability: 'Reckless' }), 'High Jump Kick', SWAMPERT),
+  pick(['flash-fire-boost'], mon('Heatran', { ability_on: true, evs: { spa: 252 } }), 'Flamethrower', SWAMPERT),
+  pick(['sniper-crit'], mon('Kingdra', { ability: 'Sniper' }), 'Surf', INFERNAPE),
+  pick(['tinted-lens'], mon('Yanmega', { ability: 'Tinted Lens' }), 'Bug Buzz', INFERNAPE),
+  pick(['normalize'], mon('Delcatty', { ability: 'Normalize' }), 'Shadow Ball', STARMIE),
+  pick(['normalize', 'immune'], mon('Delcatty', { ability: 'Normalize' }), 'Thunderbolt', GENGAR),
+  pick(['simple-attacker'], mon('Bibarel', { ability: 'Simple', boosts: { atk: 2 } }), 'Return', SWAMPERT),
+  pick(['unaware-attacker'], mon('Bibarel', { ability: 'Unaware' }), 'Return', mon('Swampert', { ...SWAMPERT, boosts: { def: 4 } })),
+  pick(['mold-breaker-thick-fat'], RAMPARDOS, 'Fire Punch', mon('Snorlax', { ability: 'Thick Fat' })),
+  // ---- 03b: defender abilities
+  pick(['thick-fat-fire'], INFERNAPE, 'Flamethrower', mon('Snorlax', { ability: 'Thick Fat' })),
+  pick(['thick-fat-ice'], STARMIE, 'Ice Beam', mon('Snorlax', { ability: 'Thick Fat' })),
+  pick(['heatproof'], INFERNAPE, 'Flamethrower', mon('Bronzong', { ability: 'Heatproof' })),
+  pick(['dry-skin-fire'], INFERNAPE, 'Flamethrower', mon('Toxicroak', { ability: 'Dry Skin' })),
+  pick(['filter'], INFERNAPE, 'Flamethrower', mon('Mr. Mime', { ability: 'Filter' })),
+  pick(['solid-rock'], STARMIE, 'Surf', mon('Rhyperior', { ability: 'Solid Rock' })),
+  pick(['marvel-scale'], GARCHOMP, 'Earthquake', mon('Milotic', { status: 'par' })),
+  pick(['battle-armor-no-crit'], GARCHOMP, 'Earthquake', mon('Drapion', { ability: 'Battle Armor' })),
+  pick(['shell-armor-no-crit'], GARCHOMP, 'Earthquake', mon('Cloyster', { ability: 'Shell Armor' })),
+  pick(['soundproof'], mon('Exploud'), 'Hyper Voice', mon('Mr. Mime', { ability: 'Soundproof' })),
+  pick(['simple-defender'], GARCHOMP, 'Earthquake', mon('Bibarel', { ability: 'Simple', boosts: { def: 2 } })),
+  pick(['unaware-defender'], mon('Garchomp', { ...GARCHOMP, boosts: { atk: 6 } }), 'Earthquake', mon('Bibarel', { ability: 'Unaware' })),
+  // ---- 03b: moves
+  pick(['multi-hit'], mon('Cloyster', { ability: 'Shell Armor' }), 'Icicle Spear', GARCHOMP),
+  pick(['multi-hit', 'skill-link'], mon('Cloyster', { ability: 'Skill Link' }), 'Icicle Spear', GARCHOMP),
+  pick(['multi-hit', 'two-hits'], mon('Hitmonlee', { ability: 'Limber' }), 'Double Kick', TYRANITAR),
+  pick(['multi-hit', 'resist-berry'], mon('Cloyster', { ability: 'Shell Armor' }), 'Icicle Spear', mon('Garchomp', { ...GARCHOMP, item: 'Yache Berry' })),
+  pick(['low-kick-heavy'], INFERNAPE, 'Low Kick', SNORLAX),
+  pick(['low-kick-light'], INFERNAPE, 'Low Kick', mon('Pikachu')),
+  pick(['grass-knot'], mon('Roserade', { evs: { spa: 252 } }), 'Grass Knot', SWAMPERT),
+  pick(['payback-slower'], TYRANITAR, 'Payback', STARMIE),
+  pick(['payback-faster'], mon('Weavile'), 'Payback', SWAMPERT),
+  pick(['payback-scarf'], mon('Tyranitar', { ...TYRANITAR, item: 'Choice Scarf', nature: 'Jolly', evs: { spe: 252 } }), 'Payback', mon('Swampert')),
+  pick(['payback-paralysis'], mon('Weavile', { status: 'par' }), 'Payback', SWAMPERT),
+  pick(['punishment-boosted-target'], mon('Weavile'), 'Punishment', mon('Swampert', { ...SWAMPERT, boosts: { atk: 2, def: 1, spe: -1 } })),
+  pick(['punishment-unboosted'], mon('Weavile'), 'Punishment', SWAMPERT),
+  pick(['natural-gift'], mon('Snorlax', { ...SNORLAX, item: 'Liechi Berry' }), 'Natural Gift', TYRANITAR),
+  pick(['natural-gift-no-berry'], SNORLAX, 'Natural Gift', TYRANITAR),
+  pick(['fling'], mon('Snorlax', { ...SNORLAX, item: 'Iron Ball' }), 'Fling', STARMIE),
+  pick(['fling-no-item'], SNORLAX, 'Fling', STARMIE),
+  pick(['judgment-plate'], mon('Arceus', { item: 'Flame Plate' }), 'Judgment', mon('Scizor', { ability: 'Swarm' })),
+  pick(['judgment-no-plate'], mon('Arceus'), 'Judgment', SWAMPERT),
 ];
 
 // ----------------------------------------------------------------------------- random sweep
 
-// Abilities whose damage effect belongs to stage 03b. The sweep never rolls them.
-const NOT_YET_MODELLED = new Set([
-  'adaptability', 'battlearmor', 'shellarmor', 'blaze', 'overgrow', 'torrent', 'swarm', 'dryskin',
-  'filter', 'solidrock', 'flowergift', 'guts', 'heatproof', 'hugepower', 'purepower', 'hustle',
-  'ironfist', 'marvelscale', 'normalize', 'reckless', 'rivalry', 'simple', 'sniper', 'solarpower',
-  'soundproof', 'technician', 'thickfat', 'tintedlens', 'unaware', 'download', 'forecast',
-]);
+// Abilities the sweep never rolls: the oracle changes its own input for them (a stat stage or
+// the holder's types), which in a real battle reaches us through the battle log instead.
+const CHANGES_ITS_INPUT = new Set(['download', 'forecast']);
+// Needs "ability on" to do anything; rolled as active half the time.
+const TOGGLED = new Set(['flashfire', 'slowstart']);
 // Fixed-damage kinds the oracle implements; it returns 0 for the others.
 const ORACLE_FIXED = (kind) => typeof kind === 'number' || kind === 'level';
+// Where our rule deliberately follows the simulator instead of the oracle, or the two packages'
+// item data differ (Fling). These have hand-picked cases limited to inputs where both agree.
+const ORACLE_DISAGREES = new Set(['gyroball', 'fling']);
 const SWEEP_MOVES = MOVES.filter(
   (m) =>
     m.category !== 'status' &&
-    !m.multihit && // the oracle returns one roll list per hit
+    !ORACLE_DISAGREES.has(m.id) &&
     !m.id.startsWith('hiddenpower') && // the oracle ignores IVs; covered by hand-picked cases
     (m.fixed_damage === undefined || ORACLE_FIXED(m.fixed_damage)),
+);
+// Items with a damage effect, so the sweep meets them far more often than the other ~150.
+const COMMON_DAMAGE_ITEMS = [
+  'Choice Band', 'Choice Specs', 'Choice Scarf', 'Life Orb', 'Expert Belt', 'Muscle Band',
+  'Wise Glasses', 'Iron Ball', 'Metronome', 'Macho Brace',
+];
+const DAMAGE_ITEMS = ITEMS.filter(
+  (item) => item.boosts_type || item.resists_type || COMMON_DAMAGE_ITEMS.includes(item.name),
 );
 const NATURES = JSON.parse(readFileSync(join(DEX_DIR, '..', 'natures.json'), 'utf8')).map((n) => n.id);
 const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
@@ -266,8 +402,10 @@ function sweep(count, seed) {
     do {
       species = choose(SPECIES);
       ability = choose(species.possible_abilities);
-    } while (NOT_YET_MODELLED.has(ability));
+    } while (CHANGES_ITS_INPUT.has(ability));
     const side = { species: species.name, ability, level: chance(0.5) ? 100 : int(1, 100), nature: choose(NATURES) };
+    if (TOGGLED.has(ability)) side.ability_on = chance(0.5);
+    if (chance(0.6)) side.item = choose(chance(0.8) ? DAMAGE_ITEMS : ITEMS).name;
     if (chance(0.5)) side.ivs = Object.fromEntries(STATS.map((s) => [s, int(0, 31)]));
     let evBudget = 510;
     side.evs = {};
@@ -276,7 +414,7 @@ function sweep(count, seed) {
       side.evs[stat] = ev;
       evBudget -= ev;
     }
-    if (chance(0.4)) side.boosts = Object.fromEntries(['atk', 'def', 'spa', 'spd'].map((s) => [s, int(-6, 6)]));
+    if (chance(0.4)) side.boosts = Object.fromEntries(['atk', 'def', 'spa', 'spd', 'spe'].map((s) => [s, int(-6, 6)]));
     if (chance(0.3)) side.status = choose(statuses);
     if (chance(0.3)) side.hp = int(1, oraclePokemon(fillSide(side)).maxHP());
     return side;

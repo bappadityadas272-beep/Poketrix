@@ -24,7 +24,7 @@ Probability = float  # documented alias; bounds enforced with Field(ge=0, le=1)
 
 
 class DamageRange(Strict):
-    """Every possible damage roll for one move, attacker -> defender, no crit."""
+    """Every possible damage roll of one hit of a move, attacker -> defender, no crit."""
 
     generation: Generation
     move_id: ShowdownId
@@ -34,6 +34,8 @@ class DamageRange(Strict):
     crit_rolls: list[int] | None = None
     defender_max_hp: int = Field(ge=1)
     type_multiplier: float = Field(ge=0.0, le=4.0)
+    # Multi-hit moves only: number of hits per use -> probability. `rolls` are for one hit.
+    hit_distribution: dict[int, float] | None = None
 
     @model_validator(mode="after")
     def _shape(self) -> Self:
@@ -48,15 +50,24 @@ class DamageRange(Strict):
                 raise ValueError(f"{name} must be non-negative and ascending")
         if self.type_multiplier == 0 and any(self.rolls):
             raise ValueError("immune matchup cannot deal damage")
+        if self.hit_distribution is not None:
+            if not self.hit_distribution or not all(1 <= h <= 5 for h in self.hit_distribution):
+                raise ValueError("hit_distribution needs hit counts between 1 and 5")
+            total = math.fsum(self.hit_distribution.values())
+            if abs(total - 1.0) > PROB_TOL or min(self.hit_distribution.values()) < 0:
+                raise ValueError(f"hit_distribution probabilities sum to {total:.6f}, not 1")
         return self
 
     @property
     def min_pct(self) -> float:
-        return 100 * self.rolls[0] / self.defender_max_hp
+        """Weakest full use of the move, as a percentage of the defender's max HP."""
+        hits = min(self.hit_distribution) if self.hit_distribution else 1
+        return 100 * hits * self.rolls[0] / self.defender_max_hp
 
     @property
     def max_pct(self) -> float:
-        return 100 * self.rolls[-1] / self.defender_max_hp
+        hits = max(self.hit_distribution) if self.hit_distribution else 1
+        return 100 * hits * self.rolls[-1] / self.defender_max_hp
 
 
 class KOChance(Strict):

@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03a merged as cp-03a; Task 03b next)
+Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design proposal first)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03a merged as cp-03a; Task 03b next)
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) done, merged; 03b (items, abilities) next; 03c (Gens 3 → 1) after | `cp-03a` |
+| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) and 03b (items, abilities) done, merged; 03c (Gens 3 → 1) next | `cp-03a`, `cp-03b` |
 | 4 | Bayesian set uncloaker | Not started | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 231 passing. `ruff check src tests` is clean.
+Tests: 352 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -429,6 +429,223 @@ Natural Gift, Magnitude, Present, Trump Card, Spit Up).
 Carried into 03b: R1 (verify Gyro Ball and Punishment against the simulator source and follow the
 simulator) and R4 (unsupported marker for unmodelled items and abilities). R2: Psywave stays
 unsupported. R3: all 310 cases are kept.
+
+## Task 03b design proposal — Gen 4 items, abilities and remaining moves (2026-10-10, approved)
+
+Branch `task/03b-items-abilities`.
+
+### R1 verified against the simulator source
+
+Read from `smogon/pokemon-showdown` (`data/moves.ts`, `sim/pokemon.ts`; `data/mods/gen4/moves.ts`
+has no override for either move):
+
+- **Gyro Ball:** `floor(25 × target Speed / user Speed) + 1`, capped at 150, and 1 if the division is
+  not finite. The oracle omits the `+ 1`.
+- **Punishment:** `60 + 20 × positiveBoosts()`, capped at 200, where `positiveBoosts()` sums every
+  positive stage including accuracy and evasion. The oracle counts only the five battle stats.
+
+03b follows the simulator for both. Golden cases for them are restricted to inputs where the two
+agree (Punishment without accuracy/evasion boosts); the differing part gets hand-written tests that
+cite the simulator rule.
+
+### Scope
+
+"What matters for damage" is defined as every ability and item whose effect the oracle's Gen 4
+damage code applies. 03b models all of them except what is listed under *stays unsupported*.
+
+**Abilities**
+
+| Stage of the formula | Abilities |
+|---|---|
+| Move type / immunity | Normalize, Soundproof, Klutz (ignores its own item) |
+| Base power | Technician, Thick Fat, Heatproof, Dry Skin (Fire ×1.25), Blaze / Overgrow / Torrent / Swarm, Iron Fist, Reckless |
+| Attack | Huge Power, Pure Power, Guts, Hustle, Solar Power, Flower Gift, Slow Start, Simple, Unaware |
+| Defense | Marvel Scale, Flower Gift, Simple, Unaware |
+| Final damage | Flash Fire boost, Adaptability, Sniper, Filter, Solid Rock, Tinted Lens |
+| Critical hits | Battle Armor, Shell Armor (no crits), Super Luck (crit stage) |
+| Multi-hit | Skill Link |
+
+Intimidate and Download need no code: their stat changes arrive as stages in the battle log.
+Slow Start and an activated Flash Fire are read from `BattlePokemon.volatiles` (`slowstart`,
+`flashfire`), which the Task 05 parser will set.
+
+**Items**
+
+- Choice Band, Choice Specs, Life Orb, Expert Belt, Muscle Band, Wise Glasses.
+- Type-boosting items and plates (×1.2), Adamant / Lustrous / Griseous Orb.
+- Species items: Light Ball, Thick Club, Soul Dew, Deep Sea Tooth, Deep Sea Scale, Metal Powder.
+- Damage-halving berries.
+- Iron Ball (grounding), Scope Lens and Razor Claw (crit stage).
+- Speed for turn-order moves: Choice Scarf, Iron Ball, Quick Powder, the EV-training items.
+- A consumed or removed item (`item_consumed`) counts as no item.
+
+**Moves**
+
+- Multi-hit moves: per-hit rolls plus the Gen 4 hit-count odds (2–5 hits: 3/8, 3/8, 1/8, 1/8;
+  Skill Link always 5), folded into the exact KO odds.
+- Weight-based: Low Kick, Grass Knot.
+- Speed-based: Gyro Ball (simulator rule), Payback.
+- Punishment (simulator rule), Natural Gift, Fling, Judgment with a plate.
+
+**Stays unsupported** (reported with a reason): Magnitude and Psywave (their outcomes do not fit the
+16-roll `DamageRange`), Present, Trump Card, Spit Up, Beat Up, Triple Kick, the reactive moves, and
+anything involving Rivalry (needs gender, which no schema carries).
+
+### R4 — unsupported marker for unmodelled items and abilities
+
+The engine keeps one explicit set of damage-relevant abilities and items it does **not** model
+(after 03b: Rivalry, and nothing else known). If either Pokémon has one and the move is damaging,
+the result is `unsupported_reason`, not a number. Everything outside that set is either modelled or
+has no damage effect in the oracle's source.
+
+### Data and schema changes needed
+
+| Change | Why | Source |
+|---|---|---|
+| `Species.weight_kg` | Low Kick, Grass Knot | `@pkmn/dex` |
+| `Move.flags` limited to `punch`, `sound`, `recoil` | Iron Fist, Soundproof, Reckless | `@pkmn/dex` (`flags`, `recoil`, `hasCrashDamage`) |
+| New `Item` schema and `data/dex/gen{2..4}/items.json`: id, name, `boosts_type`, `resists_type`, `fling_power`, `natural_gift` | every item rule above; also lets `Dex.item()` reject unknown item ids | `@pkmn/dex` for existence, Fling and Natural Gift; the oracle's own tables (`@smogon/calc/dist/items`, read at build time) for type boosts and resist berries, which are code, not data, in Showdown |
+| `DamageRange.hit_distribution: dict[int, float] \| None` | multi-hit moves; `rolls` stays per hit, and `min_pct` / `max_pct` account for the hit count | — |
+
+### Code structure
+
+- `gen4.py` keeps the formula skeleton and the order of stages.
+- `gen4_modifiers.py` holds the ability and item rules as ordered steps per stage (base power,
+  attack, defense, final damage, per-roll), so adding a rule never edits the formula. The order
+  inside each stage, including which rules are mutually exclusive, is copied from the oracle.
+- `speed.py` computes effective Speed (stages, paralysis, items, weather abilities, Tailwind) and
+  turn order under Trick Room.
+- `ko.py` gains the hit-count distribution; crit chance comes from the crit stage (move, ability,
+  item).
+
+### Verification
+
+- Generator: about 80 new hand-picked cases, one per ability, item and move rule above, tagged.
+- The random sweep is regenerated with items and all modelled abilities switched on (300 cases,
+  new fixed seed); it replaces the 03a sweep, whose mechanics it contains.
+- Every roll must still match exactly, except the two simulator-rule moves as described.
+- Crit stages, hit-count odds and accuracy are outside the oracle (it takes "crit: yes/no" as an
+  input), so they are tested by brute-force enumeration and against the simulator's Gen 4 rules.
+- Latency target unchanged: 4 moves × 6 targets under 5 ms.
+
+### Decisions asked before any code
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| B1 | Add the `Item` schema and per-generation `items.json`, with type boosts and resist berries read from the oracle's tables at build time? | Yes |
+| B2 | Add `Species.weight_kg` to the schema and snapshot? | Yes |
+| B3 | Add `Move.flags` limited to `punch`, `sound`, `recoil`? | Yes |
+| B4 | Add `DamageRange.hit_distribution` for multi-hit moves? | Yes |
+| B5 | **Payback** doubles if the user moves after the target, which depends on the opponent's choice (priority move, switch). Evaluate it by Speed comparison as the oracle does, or leave it unsupported? | Speed comparison, with Trick Room respected |
+| B6 | **Metronome (item)** needs the count of consecutive uses, which no schema carries. Assume the first use (no boost), as the oracle does by default, or mark unsupported? | Assume first use |
+| B7 | Confirm the *stays unsupported* list above, including Rivalry. | Confirm |
+| B8 | **Accuracy modifiers** (Gravity, Compound Eyes, Hustle, No Guard, Sand Veil, Snow Cloak, Tangled Feet, Wide Lens, Zoom Lens, BrightPowder, Lax Incense) change KO odds but are not in the oracle. Include them in 03b, verified against the simulator source with hand-written tests, or defer? | Include |
+| B9 | Fixture: replace the 03a sweep with the new 300-case sweep (about 470 cases and 450 KB in total), or keep both (about 690 cases, 650 KB)? | Replace |
+
+### Decisions (2026-10-10, user)
+
+B1–B9: the user chose every recommendation (item schema and data, species weight, move flags,
+hit distribution, Payback by Speed, Metronome as first use, the unsupported list, accuracy
+modifiers included, 03a sweep replaced).
+
+## Task 03b — Gen 4 items, abilities and remaining moves (approved 2026-10-10)
+
+Branch `task/03b-items-abilities`, merged into `main` as `cp-03b`.
+Tests: **352 passing** (231 before + 121 new); `ruff check src tests` is clean.
+
+### Result against the oracle
+
+- The fixture now holds **486 cases**: 186 hand-picked (90 from 03a + 96 new, one per item,
+  ability and move rule) and a new 300-case random sweep with items and abilities switched on
+  (250 of its compared cases have a held item on at least one side). It is 452 KB.
+- Every case the engine evaluates matches the oracle's stats and all normal and critical rolls
+  **exactly**: 185 hand-picked and 295 of the 300 random ones.
+- The one hand-picked case not compared is the multi-hit move into a resist berry, where the test
+  asserts the engine reports *unsupported* (the oracle confirms the later hits differ).
+- The 5 random cases not compared: Triple Kick ×2 and Present (unsupported moves), and 2 with a
+  Rivalry attacker (unsupported ability).
+- No formula change was needed after the first run against the new fixture; the only failures were
+  three fixture mistakes (abilities a species cannot have in Gen 4, one move name), which the
+  generator and the dex rejected.
+- Latency: the 4-move × 6-target report takes about **3.0 ms** (median, quiet machine) against the
+  5 ms target. The timing test now takes the best of three 25-run medians, because one run failed
+  at 6 ms while the machine was busy.
+
+### What was built
+
+- **Schemas:** `Species.weight_kg`, `Move.flags` (`MoveFlag`: punch, sound, recoil), `Item`,
+  `DamageRange.hit_distribution` (and `min_pct` / `max_pct` now cover a full use of the move).
+- **Snapshot:** weights, move flags, and `data/dex/gen{2..4}/items.json` (62 / 106 / 210 items).
+  Type boosts and resist berries are read from the oracle's tables at build time; Fling and
+  Natural Gift values come from `@pkmn/dex`. `data/dex` is 497 KB.
+- **Dex:** `Dex.item(id)` and `Dex.all_items()`.
+- **`src/poketrix/calc/gen4/`** replaces the single `gen4.py`:
+
+  | Module | Responsibility |
+  |---|---|
+  | `engine.py` | The formula's skeleton, stage order, fixed damage |
+  | `context.py` | Resolves abilities, items, HP and weather once (Klutz, Mold Breaker, Air Lock) |
+  | `movetype.py` | Effective move type, type factors, abilities that negate a move |
+  | `power.py` | Per-move power rules and base-power modifiers |
+  | `modifiers.py` | Attack, Defense and damage modifiers |
+  | `speed.py` | Effective Speed and turn order |
+  | `chance.py` | Accuracy, crit stage, multi-hit counts |
+
+- **`ko.py`:** multi-hit moves, and a faster algorithm (KO odds for the benchmark went from about
+  1.75 ms to 1.0 ms).
+- **Tests:** the golden comparison, plus brute-force and simulator-rule tests in `test_calc.py`.
+
+### Everything from the proposal's scope is in
+
+All abilities, items and moves listed in the proposal are modelled. Two rules follow the Showdown
+simulator instead of the oracle, as decided in R1: Gyro Ball (`+ 1`) and Punishment (accuracy and
+evasion boosts count). Their differing part is covered by hand-written tests.
+
+Accuracy and crit-stage rules were read from the simulator's Gen 4 source
+(`data/mods/gen4/scripts.ts`, `abilities.ts`, `items.ts`, `sim/battle-actions.ts`): the stage
+tables, Compound Eyes 1.3, Hustle 0.8, Sand Veil / Snow Cloak 0.8, Tangled Feet 0.5, Wide Lens 1.1,
+Zoom Lens 1.2, BrightPowder / Lax Incense 0.9, Gravity 5/3, No Guard, Simple, Unaware, Foresight;
+crit stages from the move, Super Luck, Scope Lens, Razor Claw, Focus Energy, Lucky Punch and Stick;
+2–5 hits at 3/8, 3/8, 1/8, 1/8.
+
+### Changes to what 03a delivered
+
+- **Accuracy and evasion stages are now applied separately**, as the simulator does. 03a combined
+  them into one stage, which gave a different answer when both were non-zero (+1 accuracy into +2
+  evasion on an 80% move is 64%, not 60%).
+- **The engine contract is one method.** `DamageEngine.evaluate(...)` returns an `Outcome` (hit
+  chance, damage or `None`, unsupported reason, defender HP) instead of separate `damage` and
+  `hit_chance` calls. It halves the per-move setup work and keeps the unsupported reason inside
+  the engine. `evaluate_move` and `build_report` are unchanged for callers, apart from a new
+  optional `attacker_conditions` argument (Tailwind).
+- **A package instead of two files.** The proposal named `gen4_modifiers.py` and `speed.py`; the
+  rules are split by formula stage across the seven modules above.
+
+### Still unsupported (reported with a reason)
+
+Magnitude, Psywave, Present, Trump Card, Spit Up, Beat Up, Triple Kick, Counter, Mirror Coat, Metal
+Burst, Bide, untyped Hidden Power without IVs, any damaging move from a Rivalry user, and a
+multi-hit move into a resist berry that would activate.
+
+### Known limits
+
+- **Not verified by the oracle:** accuracy, crit stages and hit counts (it takes them as inputs).
+  They are tested against the simulator's rules and by brute-force enumeration.
+- Accuracy is a real number; the simulator's integer rounding can differ by up to one percentage
+  point.
+- Payback and Zoom Lens use a Speed comparison; the opponent's priority moves and switches are not
+  known at this point.
+- Forecast and Download are not modelled: Castform must be given as its current forme, and
+  Download's boost is expected as a stat stage, both of which the Task 05 parser will supply.
+- Slow Start, an activated Flash Fire, Unburden, Charge and Focus Energy are read from
+  `BattlePokemon.volatiles`.
+- Fling's power comes from `@pkmn/dex`; the oracle returns 0 for seven items it has no entry for
+  (Big Root, BrightPowder, Griseous Orb, Metronome, Sticky Barb, Grip Claw, Shell Bell), so Fling
+  and Gyro Ball are left out of the random sweep and covered by hand-picked cases.
+- Future Sight and Doom Desire are given the normal crit chance.
+- Exact KO odds still assume nothing else changes HP between hits.
+
+Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design proposal.
 
 ## Standing rules
 

@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-03a` (2026-10-10)
+## Current state — checkpoint `cp-03b` (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -53,6 +53,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-01 | `src/poketrix/schemas/` — gen-aware contracts, 35 passing tests |
 | cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
+| cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -65,7 +66,7 @@ Schema map (`from poketrix.schemas import ...`):
   `context={"state": gs, "allowed_numbers": {...}}` to reject illegal moves and invented numbers.
 
 Dex (`from poketrix.dex import Dex, UnknownDexEntryError`):
-- `Dex(gen)`: `species(name_or_id)`, `move(name_or_id)`, `all_species()`, `all_moves()`.
+- `Dex(gen)`: `species(name_or_id)`, `move(name_or_id)`, `item(name_or_id)` and `all_*()`.
   Unknown ids raise `UnknownDexEntryError` (a `KeyError`); `Dex(5)` raises `ValueError`.
 - `dex/snapshot.py` loads `data/dex/gen{N}/{species,moves}.json` once per gen (cached) and
   validates every record against the schemas. Returned objects are shared: treat as read-only.
@@ -83,13 +84,20 @@ Dex (`from poketrix.dex import Dex, UnknownDexEntryError`):
 Calc (`from poketrix.calc import ...`), Gen 4 only so far:
 - `evaluate_move(attacker, defender, move, field, defender_conditions) -> MoveEvaluation` and
   `build_report(...) -> SubsystemResult[MathReport]`. Both Pokémon need a `known_set`.
-- One engine per generation behind the `DamageEngine` protocol (`engine.py`); `gen4.py` is the
-  only one registered. Add Gens 3 → 1 as new engines, never by branching inside `gen4.py`.
+- One engine per generation behind the `DamageEngine` protocol (`engine.py`, one method:
+  `evaluate(...) -> Outcome`); the `gen4/` package is the only one registered. Add Gens 3 → 1
+  as new engines, never by branching inside `gen4/`.
+- `gen4/` is split by formula stage: `engine` (skeleton), `context`, `movetype`, `power`,
+  `modifiers`, `speed`, `chance`. A new ability or item rule goes into the stage it belongs to,
+  in the oracle's order; the skeleton does not change.
+- Accuracy, crit stages and multi-hit counts are not in the oracle; they follow the Showdown
+  simulator's Gen 4 source and are tested by hand and by brute force.
 - The oracle is `@smogon/calc` 0.12.0: `tests/fixtures/calc_golden_gen4.json` (rebuild with
   `cd scripts && npm run build-calc-golden`). Every roll must match exactly; when adding a
   mechanic, add tagged cases to the generator first.
 - A move the engine cannot evaluate returns `unsupported_reason`, never a guessed number.
-- 03a ignores held items and all abilities except the immunity ones; that is Task 03b.
+- State that is not a stat stage is read from `BattlePokemon.volatiles`: `flashfire`,
+  `slowstart`, `unburden`, `charge`, `focusenergy`, `foresight`, `confusion`.
 - Type chart and natures come from the snapshot: `poketrix.dex.load_type_chart(gen)`,
   `load_natures()`.
 

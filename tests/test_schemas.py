@@ -10,6 +10,7 @@ from poketrix.schemas import (
     DamageRange,
     FixedDamage,
     GameState,
+    Item,
     KOChance,
     Move,
     MoveEvaluation,
@@ -339,3 +340,42 @@ def test_unsupported_move_evaluation_carries_no_numbers():
     with pytest.raises(ValidationError, match="no damage or KO numbers"):
         MoveEvaluation(move_id="gyroball", accuracy=1.0, unsupported_reason="not yet",
                        ko=[KOChance(hits=1, probability=0.5, method="exact")])
+
+
+# --------------------------------------------------------------------------- Task 03b additions
+
+
+def test_species_needs_a_positive_weight():
+    assert species(4, "garchomp", 445, ["dragon", "ground"], (108, 130, 95, 80, 85, 102)).weight_kg > 0
+    with pytest.raises(ValidationError):
+        species(4, "garchomp", 445, ["dragon", "ground"], (108, 130, 95, 80, 85, 102), weight_kg=0)
+
+
+def test_move_flags_are_a_closed_set():
+    assert _move(flags=["punch", "recoil"]).flags == {"punch", "recoil"}
+    with pytest.raises(ValidationError):
+        _move(flags=["contact"])
+
+
+def test_item_is_generation_legal():
+    item = Item(id="Occa Berry", name="Occa Berry", generation=4, resists_type="fire",
+                natural_gift_type="fire", natural_gift_power=60, fling_power=10)
+    assert item.id == "occaberry"
+    with pytest.raises(ValidationError, match="held items do not exist in Gen 1"):
+        Item(id="leftovers", name="Leftovers", generation=1)
+    with pytest.raises(ValidationError, match="go together"):
+        Item(id="occaberry", name="Occa Berry", generation=4, natural_gift_type="fire")
+    with pytest.raises(ValidationError):
+        Item(id="charcoal", name="Charcoal", generation=4, boosts_type="???")
+
+
+def test_hit_distribution_must_be_a_probability_distribution():
+    base = {"generation": 4, "move_id": "iciclespear", "attacker_species": "cloyster",
+            "defender_species": "garchomp", "rolls": [10] * 16, "defender_max_hp": 100,
+            "type_multiplier": 4.0}
+    spear = DamageRange(**base, hit_distribution={2: 0.375, 3: 0.375, 4: 0.125, 5: 0.125})
+    assert (spear.min_pct, spear.max_pct) == (20.0, 50.0)
+    assert DamageRange(**base).max_pct == 10.0
+    for bad in ({2: 0.5, 3: 0.4}, {0: 1.0}, {6: 1.0}, {}):
+        with pytest.raises(ValidationError):
+            DamageRange(**base, hit_distribution=bad)

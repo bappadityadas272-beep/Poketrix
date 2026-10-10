@@ -6,7 +6,15 @@ import pytest
 from pydantic import ValidationError
 
 from poketrix.dex import Dex, UnknownDexEntryError, load_natures, load_type_chart
-from poketrix.schemas import FixedDamage, Generation, MoveCategory, PokemonType, Stat, rules_for
+from poketrix.schemas import (
+    FixedDamage,
+    Generation,
+    MoveCategory,
+    MoveFlag,
+    PokemonType,
+    Stat,
+    rules_for,
+)
 
 GENS = list(Generation)
 
@@ -144,7 +152,7 @@ def write_snapshot(root, gen, species, moves):
 MAGNEMITE = {
     "id": "magnemite", "name": "Magnemite", "dex_number": 81, "types": ["electric"],
     "base_stats": {"hp": 25, "atk": 35, "def": 70, "spa": 95, "spd": 95, "spe": 45},
-    "possible_abilities": [],
+    "weight_kg": 6.0, "possible_abilities": [],
 }
 
 
@@ -218,3 +226,42 @@ def test_bad_type_chart_fails_at_load(tmp_path):
     )
     with pytest.raises(ValueError, match="steel"):
         load_type_chart(Generation.RBY, tmp_path)
+
+
+def test_species_weight_and_move_flags_are_exported():
+    assert Dex(4).species("garchomp").weight_kg == 95.0
+    assert Dex(4).species("snorlax").weight_kg == 460.0
+    assert Dex(4).move("machpunch").flags == {MoveFlag.PUNCH}
+    assert Dex(4).move("hypervoice").flags == {MoveFlag.SOUND}
+    assert Dex(4).move("doubleedge").flags == {MoveFlag.RECOIL}
+    assert Dex(4).move("highjumpkick").flags == {MoveFlag.RECOIL}  # crash damage
+    assert Dex(4).move("earthquake").flags == frozenset()
+
+
+def test_items_per_generation():
+    assert [len(Dex(g).all_items()) for g in GENS] == [0, 62, 106, 210]
+    assert Dex(4).item("Choice Band").id == "choiceband"
+    assert all(i.generation is Generation.DPP for i in Dex(4).all_items())
+    with pytest.raises(UnknownDexEntryError, match="unknown item 'leftovers' in Gen 1"):
+        Dex(1).item("leftovers")
+    with pytest.raises(UnknownDexEntryError, match="unknown item 'lifeorb' in Gen 3"):
+        Dex(3).item("Life Orb")
+
+
+def test_item_damage_data():
+    dex = Dex(4)
+    assert dex.item("charcoal").boosts_type is PokemonType.FIRE
+    assert dex.item("seaincense").boosts_type is PokemonType.WATER
+    plate = dex.item("flameplate")
+    assert (plate.boosts_type, plate.plate_type) == (PokemonType.FIRE, PokemonType.FIRE)
+    occa = dex.item("occaberry")
+    assert occa.resists_type is PokemonType.FIRE
+    assert (occa.natural_gift_type, occa.natural_gift_power) == (PokemonType.FIRE, 60)
+    assert dex.item("chilanberry").resists_type is PokemonType.NORMAL
+    assert dex.item("ironball").fling_power == 130
+    leftovers = dex.item("leftovers")
+    assert leftovers.boosts_type is None and leftovers.resists_type is None
+    assert sum(i.resists_type is not None for i in dex.all_items()) == 17
+    assert sum(i.plate_type is not None for i in dex.all_items()) == 16
+    # Berry effects and Fling only exist from Gen 4.
+    assert all(i.fling_power is None and i.resists_type is None for i in Dex(3).all_items())
