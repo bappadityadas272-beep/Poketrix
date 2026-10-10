@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03a built on `task/03-math-gen4`, awaiting review)
+Last updated: 2026-10-10 (Task 03a merged as cp-03a; Task 03b next)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03a built on `task/03-math-gen4`, awaiting review
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) built on `task/03-math-gen4`, **awaiting review**; 03b and 03c to follow | `cp-03a` pending |
+| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) done, merged; 03b (items, abilities) next; 03c (Gens 3 → 1) after | `cp-03a` |
 | 4 | Bayesian set uncloaker | Not started | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 68 passing on `main`; 231 on `task/03-math-gen4`. `ruff check src tests` is clean.
+Tests: 231 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -343,9 +343,9 @@ from a `GameState` for the opponent (needs Task 04's set hypotheses).
 Q1 export from `@pkmn/dex` · Q2 accepted · Q3 accepted · Q4 both groups · Q5 immunity abilities moved
 into 03a · Q6 `@smogon/calc` 0.12.0 added · Q7 git remote updated to `…/Poketrix.git`.
 
-## Task 03a — Gen 4 math core (built 2026-10-10, awaiting review)
+## Task 03a — Gen 4 math core (approved 2026-10-10)
 
-Branch `task/03-math-gen4`. Not merged, not tagged, not pushed.
+Branch `task/03-math-gen4`, merged into `main` as `cp-03a`.
 Tests: **231 passing** (68 before + 163 new); `ruff check src tests` is clean.
 
 ### Result against the oracle
@@ -417,7 +417,7 @@ Natural Gift, Magnitude, Present, Trump Card, Spit Up).
   applied.
 - Gens 1–3 have no engine yet (`engine_for(3)` raises `NotImplementedError`).
 
-### Open questions for review
+### Review questions (all answered 2026-10-10: the user chose every recommendation)
 
 | # | Question | Recommendation |
 |---|----------|----------------|
@@ -426,8 +426,9 @@ Natural Gift, Magnitude, Present, Trump Card, Spit Up).
 | R3 | The fixture is 266 KB, above the 150 KB estimate. Keep all 310 cases? | Keep |
 | R4 | Should 03b mark a move as unsupported when the attacker or defender has an item or ability the engine does not model yet, instead of returning the unmodified number? | Yes, once 03b defines the list of modelled items and abilities |
 
-On approval: merge `--no-ff`, tag `cp-03a`, log it, push; then 03b (items, the remaining abilities,
-crit-stage modifiers, multi-hit and weight-based moves).
+Carried into 03b: R1 (verify Gyro Ball and Punishment against the simulator source and follow the
+simulator) and R4 (unsupported marker for unmodelled items and abilities). R2: Psywave stays
+unsupported. R3: all 310 cases are kept.
 
 ## Standing rules
 
