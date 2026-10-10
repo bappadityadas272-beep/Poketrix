@@ -7,9 +7,10 @@ name = "poketrix"
 version = "0.1.0"
 description = "Real-time probabilistic decision engine for competitive Pokémon (Gens 1-4 first)."
 authors = [{ name = "Bappaditya Das" }]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.6",
+    "typing_extensions>=4.6",
 ]
 
 [project.optional-dependencies]
@@ -24,4 +25,7 @@ pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+"src/poketrix/schemas/__init__.py" = ["F401"]  # deliberate re-exports
