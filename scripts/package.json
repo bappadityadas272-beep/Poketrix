@@ -1,12 +1,14 @@
 {
   "name": "poketrix-dex-build",
   "private": true,
-  "description": "Build-time only: exports the Gen 1-4 dex snapshot from @pkmn/dex. Not needed at runtime.",
+  "description": "Build-time only: exports the dex snapshot (@pkmn/dex) and the golden damage cases (@smogon/calc). Not needed at runtime.",
   "type": "module",
   "scripts": {
-    "build-dex": "node build_dex.mjs"
+    "build-dex": "node build_dex.mjs",
+    "build-calc-golden": "node build_calc_golden.mjs"
   },
   "devDependencies": {
-    "@pkmn/dex": "0.10.11"
+    "@pkmn/dex": "0.10.11",
+    "@smogon/calc": "0.12.0"
   }
 }

@@ -8,9 +8,12 @@ from poketrix.schemas import (
     ActionPrediction,
     BattlePokemon,
     DamageRange,
+    FixedDamage,
     GameState,
     KOChance,
     Move,
+    MoveEvaluation,
+    Nature,
     PokemonSet,
     Recommendation,
     SetHypothesis,
@@ -287,3 +290,52 @@ def test_recommendation_invented_number_rejected(gen4_state):
         Recommendation.model_validate(
             _rec(cited_numbers={"p_switch": 0.80}),
             context={"state": gen4_state, "allowed_numbers": {"p_switch": 0.74}})
+
+
+# --------------------------------------------------------------------------- Task 03 additions
+
+
+def _move(**overrides):
+    fields = {"id": "seismictoss", "name": "Seismic Toss", "generation": 4, "type": "fighting",
+              "category": "physical", "base_power": 0, "accuracy": 100, "pp": 20}
+    return Move(**{**fields, **overrides})
+
+
+def test_fixed_damage_accepts_a_rule_or_a_flat_amount():
+    assert _move(fixed_damage="level").fixed_damage is FixedDamage.LEVEL
+    assert _move(fixed_damage=20).fixed_damage == 20
+    assert _move().fixed_damage is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"fixed_damage": "level", "base_power": 1},
+        {"fixed_damage": "level", "category": "status"},
+        {"fixed_damage": 0},
+        {"fixed_damage": "everything"},
+        {"multihit": (5, 2)},
+        {"multihit": (2, 6)},
+        {"crit_ratio": 0},
+    ],
+)
+def test_invalid_move_extras_rejected(overrides):
+    with pytest.raises(ValidationError):
+        _move(**overrides)
+
+
+def test_nature_raises_and_lowers_or_neither():
+    assert Nature(id="Adamant", plus="atk", minus="spa").id == "adamant"
+    assert Nature(id="hardy").plus is None
+    with pytest.raises(ValidationError):
+        Nature(id="broken", plus="atk")
+    with pytest.raises(ValidationError):
+        Nature(id="broken", plus="hp", minus="atk")
+
+
+def test_unsupported_move_evaluation_carries_no_numbers():
+    ok = MoveEvaluation(move_id="gyroball", accuracy=1.0, unsupported_reason="not yet")
+    assert ok.damage is None
+    with pytest.raises(ValidationError, match="no damage or KO numbers"):
+        MoveEvaluation(move_id="gyroball", accuracy=1.0, unsupported_reason="not yet",
+                       ko=[KOChance(hits=1, probability=0.5, method="exact")])

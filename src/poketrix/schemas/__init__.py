@@ -4,6 +4,7 @@ from .battle import HAZARDS, ActionRequest, FieldState, GameState, SideState
 from .enums import (
     ActionKind,
     BoostStat,
+    FixedDamage,
     Generation,
     MoveCategory,
     PlayerSlot,
@@ -30,6 +31,7 @@ from .pokemon import (
     BaseStats,
     BattlePokemon,
     Move,
+    Nature,
     PokemonSet,
     Species,
     StatSpread,

@@ -19,7 +19,15 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .enums import BoostStat, Generation, MoveCategory, PokemonType, Stat, Status
+from .enums import (
+    BoostStat,
+    FixedDamage,
+    Generation,
+    MoveCategory,
+    PokemonType,
+    Stat,
+    Status,
+)
 from .generation import category_for_type, rules_for
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
@@ -95,10 +103,22 @@ class Move(Strict):
     accuracy: int | None = Field(default=None, ge=1, le=100)  # None = never misses
     pp: int = Field(ge=1, le=64)
     priority: int = Field(default=0, ge=-7, le=5)
+    # Set when the move bypasses the damage formula; an int is a flat amount (Sonic Boom = 20).
+    fixed_damage: Annotated[int, Field(ge=1)] | FixedDamage | None = None
+    # Typeless damage: no type effectiveness and no STAB (Struggle from Gen 2, Gen 1 Bide).
+    ignores_type_chart: bool = False
+    crit_ratio: int = Field(default=1, ge=1, le=6)  # Showdown's critRatio; 1 = normal
+    multihit: tuple[int, int] | None = None  # (min, max) hits per use
 
     @model_validator(mode="after")
     def _gen_legal(self) -> Self:
         r = rules_for(self.generation)
+        if self.fixed_damage is not None and (
+            self.base_power != 0 or self.category is MoveCategory.STATUS
+        ):
+            raise ValueError("a fixed-damage move is a damaging move with base power 0")
+        if self.multihit is not None and not 1 <= self.multihit[0] <= self.multihit[1] <= 5:
+            raise ValueError("multihit must be (min, max) with 1 <= min <= max <= 5")
         if self.type not in r.move_types:
             raise ValueError(f"move type {self.type.value} not available in Gen {self.generation}")
         if (
@@ -110,6 +130,22 @@ class Move(Strict):
                 f"before Gen 4 a {self.type.value}-type damaging move must be "
                 f"{category_for_type(self.type).value}"
             )
+        return self
+
+
+class Nature(Strict):
+    """A nature raises one stat by 10% and lowers another; neutral natures do neither."""
+
+    id: ShowdownId
+    plus: Stat | None = None
+    minus: Stat | None = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if (self.plus is None) != (self.minus is None):
+            raise ValueError("a nature raises and lowers a stat, or neither")
+        if Stat.HP in (self.plus, self.minus):
+            raise ValueError("natures never affect HP")
         return self
 
 

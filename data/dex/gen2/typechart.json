@@ -1,0 +1,146 @@
+{
+ "fire": {
+  "fire": 0.5,
+  "ice": 2,
+  "steel": 2,
+  "grass": 2,
+  "bug": 2,
+  "dragon": 0.5,
+  "rock": 0.5,
+  "water": 0.5
+ },
+ "ice": {
+  "fire": 0.5,
+  "ice": 0.5,
+  "steel": 0.5,
+  "grass": 2,
+  "dragon": 2,
+  "flying": 2,
+  "ground": 2,
+  "water": 0.5
+ },
+ "steel": {
+  "fire": 0.5,
+  "ice": 2,
+  "steel": 0.5,
+  "electric": 0.5,
+  "rock": 2,
+  "water": 0.5
+ },
+ "electric": {
+  "electric": 0.5,
+  "grass": 0.5,
+  "dragon": 0.5,
+  "flying": 2,
+  "ground": 0,
+  "water": 2
+ },
+ "ghost": {
+  "steel": 0.5,
+  "ghost": 2,
+  "dark": 0.5,
+  "normal": 0,
+  "psychic": 2
+ },
+ "grass": {
+  "fire": 0.5,
+  "steel": 0.5,
+  "grass": 0.5,
+  "bug": 0.5,
+  "dragon": 0.5,
+  "flying": 0.5,
+  "ground": 2,
+  "poison": 0.5,
+  "rock": 2,
+  "water": 2
+ },
+ "dark": {
+  "steel": 0.5,
+  "ghost": 2,
+  "dark": 0.5,
+  "fighting": 0.5,
+  "psychic": 2
+ },
+ "bug": {
+  "fire": 0.5,
+  "steel": 0.5,
+  "ghost": 0.5,
+  "grass": 2,
+  "dark": 2,
+  "fighting": 0.5,
+  "flying": 0.5,
+  "poison": 0.5,
+  "psychic": 2
+ },
+ "dragon": {
+  "steel": 0.5,
+  "dragon": 2
+ },
+ "fighting": {
+  "ice": 2,
+  "steel": 2,
+  "ghost": 0,
+  "dark": 2,
+  "bug": 0.5,
+  "flying": 0.5,
+  "normal": 2,
+  "poison": 0.5,
+  "psychic": 0.5,
+  "rock": 2
+ },
+ "flying": {
+  "steel": 0.5,
+  "electric": 0.5,
+  "grass": 2,
+  "bug": 2,
+  "fighting": 2,
+  "rock": 0.5
+ },
+ "ground": {
+  "fire": 2,
+  "steel": 2,
+  "electric": 2,
+  "grass": 0.5,
+  "bug": 0.5,
+  "flying": 0,
+  "poison": 2,
+  "rock": 2
+ },
+ "normal": {
+  "steel": 0.5,
+  "ghost": 0,
+  "rock": 0.5
+ },
+ "poison": {
+  "steel": 0,
+  "ghost": 0.5,
+  "grass": 2,
+  "ground": 0.5,
+  "poison": 0.5,
+  "rock": 0.5
+ },
+ "psychic": {
+  "steel": 0.5,
+  "dark": 0,
+  "fighting": 2,
+  "poison": 2,
+  "psychic": 0.5
+ },
+ "rock": {
+  "fire": 2,
+  "ice": 2,
+  "steel": 0.5,
+  "bug": 2,
+  "fighting": 0.5,
+  "flying": 2,
+  "ground": 0.5
+ },
+ "water": {
+  "fire": 2,
+  "grass": 0.5,
+  "dragon": 0.5,
+  "ground": 2,
+  "rock": 2,
+  "water": 0.5
+ }
+}

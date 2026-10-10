@@ -1,10 +1,12 @@
 // Exports the Gen 1-4 dex snapshot from @pkmn/dex (Pokémon Showdown's data) to
-// data/dex/gen{1..4}/{species,moves}.json. Build-time only; Python reads the committed JSON.
+// data/dex/gen{1..4}/{species,moves,typechart}.json and data/dex/natures.json.
+// Build-time only; Python reads the committed JSON.
 //
 //   cd scripts && npm install && npm run build-dex
 //
 // Records use the field names of poketrix.schemas.Species / Move, minus `generation`
-// (implied by the folder). Types and categories are lowercased to match the schema enums.
+// (implied by the folder) and minus fields left at their schema default. Types and categories
+// are lowercased to match the schema enums.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -48,18 +50,69 @@ const MOVE_TYPE_OVERRIDES = { '1:bide': 'normal' };
 // Key them by their own name so ids stay unique and match the ids used in set pools.
 const moveId = (m) => toID(m.name);
 
+// Fixed-damage moves that Showdown implements as code callbacks rather than data.
+const CALLBACK_FIXED_DAMAGE = {
+  superfang: 'half_hp',
+  psywave: 'psywave',
+  endeavor: 'endeavor',
+  counter: 'reactive',
+  mirrorcoat: 'reactive',
+  metalburst: 'reactive',
+  bide: 'reactive',
+};
+
+// Moves that deal typeless damage (no type effectiveness, no STAB), by generation.
+const TYPELESS_DAMAGE = {
+  bide: [1],
+  struggle: [2, 3, 4],
+  futuresight: [2, 3, 4],
+  doomdesire: [3, 4],
+};
+
+function fixedDamage(m) {
+  if (m.ohko) return 'ohko';
+  if (m.damage !== undefined && m.damage !== null) return m.damage; // a number or 'level'
+  return CALLBACK_FIXED_DAMAGE[m.id];
+}
+
 function moveRecord(gen, m) {
   const id = moveId(m);
-  return {
+  const fixed = m.category === 'Status' ? undefined : fixedDamage(m);
+  const record = {
     id,
     name: m.name,
     type: MOVE_TYPE_OVERRIDES[`${gen}:${id}`] ?? m.type.toLowerCase(),
     category: m.category.toLowerCase(),
-    base_power: m.basePower,
+    // Showdown's Gen 1 data uses 1 as a placeholder power for fixed-damage moves.
+    base_power: fixed === undefined ? m.basePower : 0,
     accuracy: m.accuracy === true ? null : m.accuracy,
     pp: m.pp,
     priority: m.priority,
   };
+  if (fixed !== undefined) record.fixed_damage = fixed;
+  if (TYPELESS_DAMAGE[id]?.includes(gen)) record.ignores_type_chart = true;
+  if (m.critRatio !== 1) record.crit_ratio = m.critRatio;
+  if (m.multihit) record.multihit = [m.multihit].flat().slice(0, 2);
+  if (record.multihit?.length === 1) record.multihit.push(record.multihit[0]);
+  return record;
+}
+
+// Showdown's damageTaken codes, read from the defending type's side.
+const DAMAGE_TAKEN_MULTIPLIER = { 1: 2, 2: 0.5, 3: 0 };
+
+// attacking type -> defending type -> multiplier; neutral (1x) pairs are omitted.
+function typeChart(dex) {
+  const types = dex.types.all().filter((t) => !t.isNonstandard);
+  const chart = {};
+  for (const attacking of types) {
+    const row = {};
+    for (const defending of types) {
+      const multiplier = DAMAGE_TAKEN_MULTIPLIER[defending.damageTaken[attacking.name]];
+      if (multiplier !== undefined) row[defending.id] = multiplier;
+    }
+    chart[attacking.id] = row;
+  }
+  return chart;
 }
 
 // One record per line: compact, and a data change shows up as a one-line git diff.
@@ -84,8 +137,22 @@ for (const gen of GENS) {
   mkdirSync(dir, { recursive: true });
   writeRecords(join(dir, 'species.json'), species);
   writeRecords(join(dir, 'moves.json'), moves);
+  writeFileSync(join(dir, 'typechart.json'), `${JSON.stringify(typeChart(dex), null, 1)}
+`);
   console.log(`gen${gen}: ${species.length} species, ${moves.length} moves`);
 }
+
+// Natures are the same in every generation that has them: id -> raised / lowered stat.
+const natures = Object.fromEntries(
+  Dex.forGen(4)
+    .natures.all()
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((n) => [n.id, n.plus ? { plus: n.plus, minus: n.minus } : {}]),
+);
+writeRecords(
+  join(OUT_DIR, 'natures.json'),
+  Object.entries(natures).map(([id, effect]) => ({ id, ...effect })),
+);
 
 const { version } = JSON.parse(
   readFileSync(join(HERE, 'node_modules', '@pkmn', 'dex', 'package.json'), 'utf8'),
