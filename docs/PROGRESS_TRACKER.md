@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal next)
+Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal awaiting approval)
 
 ## Status at a glance
 
@@ -11,7 +11,7 @@ Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal next)
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Next: design proposal (Order 6) | |
+| 5 | Showdown battle-log parser → `GameState` | Design proposed on `task/05-showdown-parser`, **awaiting approval** | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
@@ -1421,7 +1421,8 @@ I checked the following on the user's machine:
 **Result (2026-10-11): all checks passed.** R6 and R7 added with six new tests (731 in total):
 `worst_crit_pct >= worst_case_pct` everywhere; the hand-worked case gives 0.75 × 0.30 = 0.225;
 an unsupported move sets `ko_lower_bound`; the bounds hold on 50 seeded held-out matchups;
-ruff clean; the report stays under 50 ms.
+ruff clean; the report stays under 50 ms. Merged, tagged and pushed:
+`dcee5f6..2d3887f main -> main`, new tag `cp-04`.
 
 ### Order 6: Phase 5 design proposal, the Showdown battle-log parser. **STOP after the proposal.**
 Branch: `task/05-showdown-parser`. Write the proposal as a new section in this tracker.
@@ -1465,6 +1466,191 @@ out. No live connection, browser extension or WebSocket client; those come later
    ruled-out evidence rules, and which fixtures to commit.
 
 Then **stop** and ask the user to approve or adjust the proposal before writing any parser code.
+
+## Task 05 design proposal — Showdown battle-log parser (2026-10-11, awaiting approval)
+
+Branch `task/05-showdown-parser`. No parser code exists. The observations below come from
+`sim/SIM-PROTOCOL.md` in the pinned `pokemon-showdown` 0.11.11 and from 500 battles I simulated
+locally with that package (200 in Gen 4, 100 each in Gens 1–3), in a temp folder outside the repo.
+No replay has been downloaded; I only queried the public replay search listing to see that all
+four formats have recent replays.
+
+### 1. Inputs and the two viewpoints
+
+- **Spectator mode:** a saved replay log. Both sides are known only through what has been
+  revealed. No `|request|`.
+- **Player mode:** the log one player receives, which also carries `|request|` JSON with our full
+  team (moves, item, ability, exact HP, computed stats) and the legal choices.
+
+Both produce valid `GameState`s. Snapshots start at turn 1, when both leads are on the field
+(`GameState` needs at least one Pokémon per side).
+
+**Message types we handle** (the count is how often each appeared in the 200 Gen 4 battles):
+
+| Group | Types |
+|-------|-------|
+| Setup | `player`, `teamsize`, `gametype` (anything but singles is rejected), `gen`, `tier`, `start` |
+| Turn structure | `turn` (7,372), `upkeep`, `win`, `tie`, `request` |
+| Major actions | `move` (13,150), `switch` (2,242), `drag`, `detailschange`, `-formechange`, `cant`, `faint` |
+| HP and status | `-damage` (9,933), `-heal` (6,901), `-sethp`, `-status`, `-curestatus`, `-cureteam` |
+| Stat stages | `-boost`, `-unboost`, `-setboost`, `-swapboost`, `-copyboost`, `-clearboost`, `-clearallboost`, `-clearpositiveboost`, `-clearnegativeboost` |
+| Field and sides | `-weather`, `-fieldstart`, `-fieldend`, `-sidestart`, `-sideend` |
+| Volatiles | `-start`, `-end`, `-transform`, `-prepare`, `-mustrecharge` |
+| Items and abilities | `-item`, `-enditem`, `-ability`, `-endability`, and the `[from] item:` / `[from] ability:` tags on any line |
+
+**Ignored on purpose:** `-crit`, `-supereffective`, `-resisted`, `-miss`, `-notarget`, `-hint`,
+`-message`, `-anim`, `-hitcount`, `-singleturn`, `-singlemove`, `-activate`, `-immune` and `-fail`
+(the last four are still scanned for ability tags), the timestamp `t:`, chat and room lines
+(`c`, `c:`, `j`, `l`, `n`, `raw`, `html`, `inactive`, `inactiveoff`), `rule`, and everything that
+does not exist in Gens 1–4 singles (`teampreview`, `poke`, `clearpoke`, `swap`, `replace`,
+`-mega`, `-zpower`, …). An unknown type is counted, not an error, so a newer log still parses;
+tests run in a strict mode that fails on any unknown type.
+
+### 2. Architecture
+
+Event-sourced, as the order recommends, with one adjustment:
+
+```
+parse_line(text) -> Event | None          typed, immutable Pydantic events
+BattleTracker.apply(event)                 the only place state changes
+BattleTracker.snapshot() -> TurnSnapshot   at every |turn|, and at the end
+```
+
+- `TurnSnapshot` holds the turn number, a validated `GameState`, a `SetEvidence` for every
+  revealed Pokémon, and the events of the turn. A battle is a list of these, so every turn can
+  be replayed and tested, and Phase 7 gets its training rows from the same list.
+- **The adjustment:** the order sketches a pure `reduce(state, event) -> state` over immutable
+  states. I recommend one small mutable tracker with immutable *snapshots* instead. The tracker
+  must remember things that are not part of `GameState` (nickname-to-slot maps, whether an item
+  is still the original one, which moves were used during the current stay), and copying a
+  validated `GameState` on every one of roughly 450 lines per battle costs far more than copying
+  it once per turn. Replayability is unchanged: the event list is the source of truth, and
+  applying it again gives the same snapshots.
+- Package `poketrix.showdown`: `protocol.py` (events and `parse_line`), `tracker.py` (state),
+  `evidence.py` (the rules of section 4, separate so they can be tested alone), `request.py`
+  (player mode), `replay.py` (`parse_battle(text, perspective=None) -> list[TurnSnapshot]`).
+- No network code: text in, snapshots out.
+
+**Player mode and spreads.** `|request|` gives our Pokémon's moves, item, ability and computed
+stats, but not EVs or IVs, which the calculator's `known_set` needs. In Random Battle the spread
+follows from the set, so the parser looks it up in the Phase 4 prior table and checks that our
+computed stats equal the stats in the request; a mismatch is reported, not silently accepted.
+
+### 3. HP and identity
+
+- **HP scale:** all four formats run with "HP Percentage Mod". In 500 simulated battles every
+  spectator HP value was `N/100`, or `0 fnt`, optionally followed by a status. No Gen 1–4 Random
+  Battle format uses the 48-pixel scale. In player mode our own side shows exact `current/max`,
+  which fills `hp_current` / `hp_max`.
+- **Identity:** a Pokémon is keyed by (player, nickname); `switch` and `drag` carry the details
+  string that gives species and level (`Raichu, L74`; no level means 100). Gender and shininess
+  are ignored.
+- **Forme changes:** `detailschange` and `-formechange` replace the species for types and stats
+  (Castform's Forecast appeared in the sample). The Pokémon's set identity for the uncloaker
+  stays the forme it was sent out as.
+- **Transform:** `-transform` marks the Pokémon as transformed until it leaves the field.
+- **Gens 1–2:** no abilities, and no items in Gen 1; nothing else differs in the log format.
+- **Field timers:** the log does not say how many turns of weather, screens, Trick Room or
+  Gravity remain. The tracker counts from when each started and reports the standard duration
+  minus the turns elapsed; weather from an ability is reported as open-ended.
+
+### 4. Evidence rules for the uncloaker
+
+Wrong evidence would silently corrupt the posterior, so every rule gets its own log-snippet test,
+and all of them are checked against ground truth (section 5).
+
+**Revealed moves.** A `|move|` line reveals a move only if the Pokémon chose it:
+
+| Situation | Counts as revealed? |
+|-----------|---------------------|
+| Plain `|move|P|Move|…` | Yes |
+| `[from]` names another move that calls moves: Sleep Talk, Metronome, Mirror Move, Copycat, Assist, Me First, Snatch, Magic Coat, Nature Power | No (the calling move itself was revealed by its own line) |
+| `[from] lockedmove`, or `[from]` naming the move itself (second turn of Sky Attack, Pursuit on a switch) | Yes, it is the Pokémon's own move |
+| Any move while transformed | No |
+| A move gained through Mimic, until the Pokémon leaves the field | No |
+| Struggle | No |
+
+The tag's spelling differs by generation and both must be read: Gen 4 writes
+`[from] move: Sleep Talk`, Gens 1–3 write `[from] Sleep Talk`.
+
+**Items.** The tracker keeps two things per Pokémon: the item it holds now (for the damage
+calculator, in `BattlePokemon.revealed_item`) and its original item (for `SetEvidence.item`).
+
+- Revealed as original: `-item` without a swapping source, `-enditem` (eaten, consumed, knocked
+  off), and any `[from] item: X` tag (Leftovers and Black Sludge recovery, Life Orb recoil, a
+  status from Toxic Orb or Flame Orb, a berry's boost).
+- **Trick, Switcheroo, Thief, Covet:** `-item|P|X|[from] move: Trick` means P now holds X, and X
+  was the *other* Pokémon's original item if that one had not swapped before. From then on
+  neither Pokémon's later item reveals count as original.
+- A positive "it must hold a Choice item" is never inferred; repeating a move proves nothing.
+
+**Abilities.** `-ability|P|A`, and `[from] ability: A` on any line. With an `[of] Q` part the
+ability is Q's; without one it belongs to the Pokémon on the line. Trace, Skill Swap and Role
+Play are handled like item swaps: the copied ability is not the copier's original.
+
+**Ruled out, only where it is certain:**
+
+| # | Rule | Exclusions that keep it certain |
+|---|------|--------------------------------|
+| N1 | Not Leftovers and not Black Sludge: the Pokémon was on the field at the end of a turn, alive, below 100% HP, and no item recovery followed (Gen 2+) | Pokémon that may have Klutz; under Embargo or Heal Block; item already swapped |
+| N2 | Not Life Orb: it chose a damaging move, the target lost HP directly (not a substitute), and no Life Orb recoil followed (Gen 4) | Pokémon that may have Magic Guard; item already swapped |
+| N3 | Not a Choice item: it chose two different moves during one stay on the field (Gens 3–4) | called moves and Struggle do not count; item already swapped; Pokémon that may have Klutz |
+| N4 | Not an absorbing ability (Levitate, Flash Fire, Water Absorb, Volt Absorb, Motor Drive, Dry Skin): it lost HP to a move of the absorbed type | attacker may have Mold Breaker; Gravity or Iron Ball for Levitate; ability already changed |
+
+Left out as ambiguous: Focus Sash, resist berries, Lum and Sitrus Berry timing, Shell Bell, and
+any rule based on damage amounts (that is the deferred 04b).
+
+### 5. Corpus and validation
+
+Two corpora, because they answer different questions.
+
+**A. Simulated battles, with ground truth.** A script plays seeded Random Battles with the pinned
+simulator and two random players, and saves the spectator log, one player's log with requests,
+and both true teams. Nothing is downloaded. This is the only way to check the evidence rules
+against the truth:
+
+- every move the parser calls revealed is in that Pokémon's true set;
+- every original item and ability it reports is the true one;
+- nothing it rules out is true;
+- in player mode, the `known_set` it builds reproduces the stats in the request.
+
+The target for all four is 100% over 500 battles per generation (about 450 log lines and 37
+turns per Gen 4 battle; 8–19 KB per log). The limit of this corpus: random players do not play
+like people, so move and switch patterns are unrealistic even though the mechanics are covered
+widely.
+
+**B. Real replays, for robustness and the R8 staleness rate.** Public replays from
+`replay.pokemonshowdown.com` (its search listing and each replay's `.log`), which exist for all
+four formats as of 2026-10-10. Checks:
+
+- every replay parses without an exception and every snapshot validates;
+- the final state agrees with the log (`|win|`, fainted counts, last HP values);
+- parsing and applying one event takes under 1 ms;
+- **staleness rate (R8):** per generation, the share of opposing Pokémon whose final evidence
+  makes the uncloaker leave tier 1, split into tier 2 and tier 3, and listed by upload month.
+
+**What gets committed.** Simulated logs contain no personal data, so a small sample is committed
+as offline fixtures. Real replays contain usernames and chat, so I recommend committing none of
+them: they stay in git-ignored `data/raw/`, and only aggregate numbers go into this tracker.
+
+### 6. Out of scope
+
+The live client, WebSocket or browser overlay; doubles; team preview (no Gen 1–4 Random Battle
+uses it); Phase 6 orchestration; and using damage amounts as evidence (04b).
+
+### 7. Decisions needed before any code
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| P1 | Architecture: typed events, one mutable tracker, immutable per-turn snapshots (instead of a pure reducer over immutable states)? | Yes |
+| P2 | Add the simulated corpus (pinned simulator, no download) as the ground-truth test of the evidence rules? It reuses the `pokemon-showdown` install from Phase 4. | Yes |
+| P3 | Simulated corpus size: 500 battles per generation generated on demand (git-ignored), 10 per generation committed as fixtures (about 0.5 MB)? | Yes |
+| P4 | **May I download real replays?** 500 per generation (2,000 in total, roughly 30 MB), from the public replay site at about one request per second (about 35 minutes), into git-ignored `data/raw/`. | Yes |
+| P5 | Commit no real replays (usernames and chat), only aggregate results? | Yes |
+| P6 | Ruled-out rules N1–N4 as listed, with their exclusions? | Yes, all four |
+| P7 | Player mode: take our spreads from the Phase 4 prior table and verify them against the request's stats? | Yes |
+| P8 | Keep `BattlePokemon.volatiles` free-form, with the parser emitting a documented list, or turn it into a closed enum now? | Keep free-form; document the list |
+| P9 | Build order: spectator mode and the evidence rules first (stop for review), then player mode and the real-replay measurements? | Yes, two steps |
 
 ## Standing rules
 
