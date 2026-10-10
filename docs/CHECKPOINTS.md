@@ -24,3 +24,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 | Tag   | Task                                   | Date       | Tests |
 |-------|----------------------------------------|------------|-------|
 | cp-00 | Repo scaffold + checkpoint workflow    | 2026-10-10 | n/a   |
+| cp-01 | Shared Pydantic schemas (gen 1-4 aware) | 2026-10-10 | 35 passed |
