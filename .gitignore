@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.env
+# Large downloaded data lives here but is not committed; fetch scripts regenerate it.
+data/raw/
+data/cache/
