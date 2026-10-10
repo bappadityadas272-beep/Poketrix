@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 04 step 1, the uncloaker, built; awaiting review)
+Last updated: 2026-10-11 (Task 04 step 2, the threat report, built; awaiting review)
 
 ## Status at a glance
 
@@ -10,13 +10,13 @@ Last updated: 2026-10-10 (Task 04 step 1, the uncloaker, built; awaiting review)
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
-| 4 | Bayesian set uncloaker | Step 1 (prior + uncloaker) built on `task/04-bayes-uncloaker`, **awaiting review**; step 2 (threat report) to follow | |
+| 4 | Bayesian set uncloaker | Step 1 (prior + uncloaker) approved; step 2 (threat report) built on `task/04-bayes-uncloaker`, **awaiting review** | `cp-04` pending |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 679 passing on `main`; 716 on `task/04-bayes-uncloaker`. `ruff check src tests` is clean.
+Tests: 679 passing on `main`; 725 on `task/04-bayes-uncloaker`. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -1089,7 +1089,7 @@ ruled-out items and abilities are part of the evidence; damage-based evidence (0
 until after Task 05; the evaluation targets and the 5%-removed test are accepted; the threat
 report is a second step after this one is reviewed; the package is `poketrix.uncloak`.
 
-## Task 04, step 1 — the set prior and the uncloaker (built 2026-10-10, awaiting review)
+## Task 04, step 1 — the set prior and the uncloaker (approved 2026-10-11)
 
 Branch `task/04-bayes-uncloaker`. Not merged, not tagged, not pushed.
 Tests: **716 passing** (679 before + 37 new); `ruff check src tests` is clean. The suite now takes
@@ -1275,6 +1275,76 @@ question for your reviewer; I have not added it because it was not in the propos
 
 Step 2: `threat_report` and the `ThreatReport` schema (decision D8), then the Phase 4 merge and
 `cp-04`.
+
+## Task 04, step 2 — the threat report (built 2026-10-11, awaiting review)
+
+Branch `task/04-bayes-uncloaker`. Not merged, not tagged, not pushed.
+Tests: **725 passing** (716 before + 9 new); `ruff check src tests` is clean.
+
+Step 1 was approved by the user on 2026-10-11, including the changed log-loss test (strictly
+lower than uniform for k ≤ 3, within 0.001 at k = 4). Holding back probability for unseen sets
+on the main path was not requested and is not added.
+
+### What was built
+
+- **Schemas:** `MoveThreat` and `ThreatReport`.
+- **`poketrix.uncloak.threat`:**
+
+  ```python
+  threat_report(ours, theirs, posterior, prior, field, our_conditions, their_conditions)
+      -> SubsystemResult[ThreatReport]
+  ```
+
+  `ours` is our Pokémon with its known set; `theirs` is the opponent as the battle shows it
+  (species, level, HP bar). For every hypothesis with a non-zero posterior it builds the
+  opponent's full set and calls the existing `evaluate_move`. No calculator code was added.
+
+### What a `MoveThreat` says
+
+For each move the opponent may carry, most likely first:
+
+| Field | Meaning |
+|-------|---------|
+| `probability` | P(the opponent carries the move), the posterior's `move_probability` |
+| `expected_pct` | mean damage of one use, as a percentage of our maximum HP, averaged over the hypotheses that carry the move |
+| `worst_case_pct` | the highest roll among those hypotheses |
+| `ko_probability` | chance that one use knocks our Pokémon out from its current HP |
+| `unsupported_reason` | set when the calculator cannot evaluate the move |
+
+- The damage figures are conditional on the opponent having the move and on a normal hit:
+  `expected_pct` and `worst_case_pct` leave out misses and critical hits; `ko_probability`
+  includes both, because it comes from the calculator's exact KO odds.
+- A multi-hit move's figures cover a whole use.
+- **Review finding R5 holds here:** a move the calculator cannot evaluate (Counter, …) is listed
+  with its probability and a reason, and with no damage numbers. A status move has neither
+  numbers nor a reason.
+
+### How hypotheses become sets
+
+- Moves, item and ability are the hypothesis's own, so a tier 2 fallback's observed item is used.
+- The spread comes from the table set the hypothesis names; for a tier 3 fallback (a completed
+  moveset) from the species' most common set.
+- The level is the one the battle shows.
+- A move's damage depends on the attacker's item, ability and spread, not on its other moves, so
+  each such combination is evaluated once and shared between hypotheses.
+
+### Speed
+
+For the species with the most hypotheses (42) the report takes about 5 ms (median) on this
+machine; the test allows 50 ms. Uncloaking plus the threat report for one opposing Pokémon is
+well inside the 150 ms ML budget per turn.
+
+### Known limits
+
+- The report covers one opposing Pokémon against one of ours. Building it for a whole turn from
+  a `GameState` (active Pokémon, side conditions, evidence from the log) is Phase 6's job, with
+  the Phase 5 parser supplying the evidence.
+- `expected_pct` is not weighted by accuracy or crit chance; use `ko_probability` when those
+  matter.
+- If one hypothesis's version of a move is unsupported, the move is reported as unsupported.
+
+On approval: merge `--no-ff`, tag `cp-04`, log it, push. That completes Phase 4. Next is Phase 5,
+the Showdown battle-log parser, starting with a design proposal.
 
 ## Standing rules
 

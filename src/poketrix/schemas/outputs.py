@@ -172,6 +172,55 @@ class ActionPrediction(Strict):
         return self
 
 
+# --------------------------------------------------------------------------- threat report
+
+
+class MoveThreat(Strict):
+    """What one move the opponent may carry would do to our Pokémon.
+
+    The damage figures are conditional on the opponent having the move and on it landing as a
+    normal (non-critical) hit, averaged over the set hypotheses that carry it. Percentages are
+    of our Pokémon's maximum HP.
+    """
+
+    move_id: ShowdownId
+    probability: float = Field(ge=0.0, le=1.0)  # P(the opponent carries this move)
+    expected_pct: float | None = Field(default=None, ge=0.0)  # mean damage of one use
+    worst_case_pct: float | None = Field(default=None, ge=0.0)  # highest roll of any hypothesis
+    ko_probability: float | None = Field(default=None, ge=0.0, le=1.0)  # one use, crits included
+    # Set when the calculator cannot evaluate the move: it is then unknown, never "no damage".
+    unsupported_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _unsupported_has_no_numbers(self) -> Self:
+        numbers = (self.expected_pct, self.worst_case_pct, self.ko_probability)
+        if self.unsupported_reason is not None and any(n is not None for n in numbers):
+            raise ValueError("an unsupported move carries no damage numbers")
+        if (self.expected_pct is None) != (self.worst_case_pct is None):
+            raise ValueError("expected and worst-case damage are given together")
+        if self.expected_pct is not None and self.worst_case_pct + PROB_TOL < self.expected_pct:
+            raise ValueError("worst-case damage is below the expected damage")
+        return self
+
+
+class ThreatReport(Strict):
+    """The opponent's possible moves against our Pokémon, most likely first."""
+
+    attacker_species: ShowdownId
+    defender_species: ShowdownId
+    threats: list[MoveThreat] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        ids = [t.move_id for t in self.threats]
+        if len(set(ids)) != len(ids):
+            raise ValueError("a move is listed twice")
+        odds = [t.probability for t in self.threats]
+        if odds != sorted(odds, reverse=True):
+            raise ValueError("threats must be ordered by probability, highest first")
+        return self
+
+
 # --------------------------------------------------------------------------- wrapper
 
 T = TypeVar("T", bound=BaseModel)

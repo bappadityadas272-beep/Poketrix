@@ -23,10 +23,12 @@ from .outputs import (
     KOChance,
     MathReport,
     MoveEvaluation,
+    MoveThreat,
     Recommendation,
     SetHypothesis,
     SetPosterior,
     SubsystemResult,
+    ThreatReport,
 )
 from .pokemon import (
     BaseStats,
