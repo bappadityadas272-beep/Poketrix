@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-03c` merged; Task 04 built on `task/04-bayes-uncloaker`, awaiting review (2026-10-11)
+## Current state — checkpoint `cp-04`: Phase 4 (set uncloaker) complete (2026-10-11)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -55,7 +55,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 | cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
-| (cp-04 pending) | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 725 tests total |
+| cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -119,10 +119,17 @@ Uncloak (`from poketrix.uncloak import Uncloaker, load_prior`):
 - `SetPrior.pokemon_set(set_id)` gives the full `PokemonSet` (level and spread included) for
   the damage calculator.
 - `threat_report(ours, theirs, posterior, prior, ...)` returns `SubsystemResult[ThreatReport]`:
-  each move the opponent may carry with its probability and its damage to our Pokémon. It
-  only joins the posterior and `evaluate_move`; damage rules never go here.
+  each move the opponent may carry with its probability and its damage to our Pokémon, plus
+  `p_ko_best_move` (can they knock us out this turn?). It only joins the posterior and
+  `evaluate_move`; damage rules never go here. In a UI, "worst case" is `worst_crit_pct`.
 - `python -m poketrix.uncloak.evaluation` prints the held-out metrics; `tests/test_uncloak.py`
   asserts the agreed targets. Paste a new table into the tracker when the prior is rebuilt.
+
+Carried forward (from the Task 04 review):
+- No probability is held back for unseen sets yet (R8). Phase 5 measures, on real replays, how
+  often revealed evidence contradicts every known set; that staleness rate decides it.
+- If the test suite keeps slowing down, give the evaluation tests a `slow` marker (R9); the
+  full suite stays mandatory before every merge.
 
 Carried forward (from the 03c review):
 - A move the calculator reports as unsupported (Counter, Bide, Present, …) must reach the user

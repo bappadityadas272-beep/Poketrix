@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Task 04 step 2 approved with two additions; orders 5–6 issued: close Phase 4, propose Phase 5)
+Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal next)
 
 ## Status at a glance
 
@@ -10,13 +10,13 @@ Last updated: 2026-10-11 (Task 04 step 2 approved with two additions; orders 5�
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
-| 4 | Bayesian set uncloaker | Steps 1 and 2 **approved**; additions R6–R7, then merge + tag (Order 5) | `cp-04` |
+| 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | Next: design proposal (Order 6) | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 679 passing on `main`; 725 on `task/04-bayes-uncloaker`. `ruff check src tests` is clean.
+Tests: 731 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -1306,10 +1306,22 @@ For each move the opponent may carry, most likely first:
 | Field | Meaning |
 |-------|---------|
 | `probability` | P(the opponent carries the move), the posterior's `move_probability` |
-| `expected_pct` | mean damage of one use, as a percentage of our maximum HP, averaged over the hypotheses that carry the move |
-| `worst_case_pct` | the highest roll among those hypotheses |
+| `expected_pct` | mean damage of one normal hit, as a percentage of our maximum HP, averaged over the hypotheses that carry the move |
+| `worst_case_pct` | the highest roll among those hypotheses **without** a critical hit |
+| `worst_crit_pct` | the highest roll **with** a critical hit: the figure a UI should call "worst case" (R6) |
 | `ko_probability` | chance that one use knocks our Pokémon out from its current HP |
 | `unsupported_reason` | set when the calculator cannot evaluate the move |
+
+And on the `ThreatReport` itself (R7):
+
+| Field | Meaning |
+|-------|---------|
+| `p_ko_best_move` | "if they attack, can they knock us out this turn?": for each possible set, the KO chance of its best move, weighted by the set's posterior |
+| `ko_lower_bound` | `True` when a possible move could not be evaluated and counted as 0, so the real chance is at least `p_ko_best_move` |
+
+Where a critical hit is impossible or changes nothing (fixed damage, Battle Armor),
+`worst_crit_pct` equals `worst_case_pct`. The optional `p_has_ohko_move` was left out, as the
+review allowed.
 
 - The damage figures are conditional on the opponent having the move and on a normal hit:
   `expected_pct` and `worst_case_pct` leave out misses and critical hits; `ko_probability`
@@ -1405,6 +1417,11 @@ I checked the following on the user's machine:
    `git tag -a cp-04 -m "Bayesian set uncloaker + threat report"`. Log it in `docs/CHECKPOINTS.md`, mark Phase 4
    as done here and in `README.md`, and run `git push origin main --tags`. Report the result in one line under this order.
    If any check fails, **stop** and report instead of merging.
+
+**Result (2026-10-11): all checks passed.** R6 and R7 added with six new tests (731 in total):
+`worst_crit_pct >= worst_case_pct` everywhere; the hand-worked case gives 0.75 × 0.30 = 0.225;
+an unsupported move sets `ko_lower_bound`; the bounds hold on 50 seeded held-out matchups;
+ruff clean; the report stays under 50 ms.
 
 ### Order 6: Phase 5 design proposal, the Showdown battle-log parser. **STOP after the proposal.**
 Branch: `task/05-showdown-parser`. Write the proposal as a new section in this tracker.

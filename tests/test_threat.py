@@ -1,5 +1,6 @@
 """Task 04, step 2: the threat report (set posterior x damage calculator)."""
 
+import random
 import statistics
 from time import perf_counter
 
@@ -7,17 +8,19 @@ import pytest
 from calc_helpers import DEX4, battler
 from pydantic import ValidationError
 
-from poketrix.calc import evaluate_move
+from poketrix.calc import compute_stats, evaluate_move
 from poketrix.schemas import (
     BattlePokemon,
     MoveThreat,
     PokemonSet,
     PriorSet,
     SetEvidence,
+    Stat,
     SubsystemStatus,
     ThreatReport,
 )
 from poketrix.uncloak import SetPrior, Uncloaker, load_prior, threat_report
+from poketrix.uncloak.evaluation import load_holdout
 
 PRIOR4 = load_prior(4)
 UNCLOAKER4 = Uncloaker(PRIOR4)
@@ -151,8 +154,16 @@ def test_threat_schema_rules():
                    worst_case_pct=2)
     with pytest.raises(ValidationError, match="given together"):
         MoveThreat(move_id="surf", probability=0.5, expected_pct=10)
+    with pytest.raises(ValidationError, match="given together"):
+        MoveThreat(move_id="surf", probability=0.5, expected_pct=10, worst_case_pct=12)
     with pytest.raises(ValidationError, match="below the expected"):
-        MoveThreat(move_id="surf", probability=0.5, expected_pct=10, worst_case_pct=5)
+        MoveThreat(move_id="surf", probability=0.5, expected_pct=10, worst_case_pct=5,
+                   worst_crit_pct=20)
+    with pytest.raises(ValidationError, match="critical hit cannot do less"):
+        MoveThreat(move_id="surf", probability=0.5, expected_pct=10, worst_case_pct=12,
+                   worst_crit_pct=11)
+    assert MoveThreat(move_id="surf", probability=0.5, expected_pct=10, worst_case_pct=12,
+                      worst_crit_pct=24)
     likely = MoveThreat(move_id="surf", probability=0.9)
     unlikely = MoveThreat(move_id="icebeam", probability=0.1)
     assert ThreatReport(attacker_species="a", defender_species="b", threats=[likely, unlikely])
@@ -178,3 +189,111 @@ def test_report_for_the_largest_hypothesis_table_is_fast():
     timed()
     # Part of the ML budget of 150 ms per turn; uncloaking itself takes well under 5 ms.
     assert min(statistics.median(timed() for _ in range(9)) for _ in range(3)) < 50.0
+
+
+# --------------------------------------------------------------------------- R6: critical hits
+
+
+def test_worst_crit_is_never_below_the_worst_normal_hit():
+    prior, ours, theirs = two_set_prior(), battler("swampert"), opponent("garchomp", level=74)
+    _, result = report_for(ours, theirs, prior)
+    threats = {t.move_id: t for t in result.payload.threats}
+    for threat in threats.values():
+        if threat.worst_case_pct is not None:
+            assert threat.worst_crit_pct >= threat.worst_case_pct >= threat.expected_pct
+    # Earthquake: the highest critical roll of the stronger (Choice Band) hypothesis.
+    attacker = theirs.model_copy(update={"known_set": prior.pokemon_set("garchomp:1")})
+    damage = evaluate_move(attacker, ours, DEX4.move("earthquake")).damage
+    assert threats["earthquake"].worst_crit_pct == pytest.approx(
+        100 * damage.crit_rolls[-1] / damage.defender_max_hp
+    )
+    assert threats["earthquake"].worst_crit_pct > 1.9 * threats["earthquake"].worst_case_pct
+    assert threats["swordsdance"].worst_crit_pct is None  # a status move
+    assert threats["counter"].worst_crit_pct is None  # unsupported
+
+
+def test_worst_crit_equals_worst_case_when_a_crit_changes_nothing():
+    ours, theirs = battler("swampert"), opponent("blissey")
+    posterior = UNCLOAKER4.uncloak("blissey", SetEvidence(revealed_moves=["seismictoss"])).payload
+    report = threat_report(ours, theirs, posterior, PRIOR4).payload
+    toss = next(t for t in report.threats if t.move_id == "seismictoss")
+    assert toss.worst_crit_pct == toss.worst_case_pct == toss.expected_pct  # fixed damage
+
+
+# --------------------------------------------------------------------------- R7: the headline
+
+
+def ohko_prior():
+    """Set A (3 in 4) carries Fissure; set B (1 in 4) carries no damaging move."""
+    species = DEX4.species("garchomp")
+
+    def row(set_id, moves, count):
+        known = PokemonSet(species=species, level=74, moves=moves, ability="sandveil")
+        return PriorSet(set_id=set_id, pokemon_set=known, count=count)
+
+    return SetPrior(4, [
+        row("garchomp:1", ["fissure", "swordsdance"], 3),
+        row("garchomp:2", ["swordsdance", "substitute"], 1),
+    ])
+
+
+def test_p_ko_best_move_worked_by_hand():
+    # Both Pokémon are level 74, so Fissure lands 30% of the time and then always knocks out:
+    # KO(Fissure | A) = 0.30. Set A has probability 3/4 and set B cannot deal damage, so
+    # p_ko_best_move = 0.75 x 0.30 + 0.25 x 0 = 0.225.
+    ours, theirs = battler("swampert", level=74), opponent("garchomp", level=74)
+    _, result = report_for(ours, theirs, ohko_prior())
+    report = result.payload
+    assert report.p_ko_best_move == pytest.approx(0.225)
+    assert report.ko_lower_bound is False
+    fissure = next(t for t in report.threats if t.move_id == "fissure")
+    assert (fissure.probability, fissure.ko_probability) == pytest.approx((0.75, 0.30))
+
+
+def test_p_ko_best_move_takes_the_best_move_of_each_set_not_a_sum():
+    # A healthy Swampert survives almost everything; at 1 HP every damaging move knocks it
+    # out, and a set with three such moves still counts once.
+    theirs = opponent("garchomp")
+    healthy = report_for(battler("swampert"), theirs)[1].payload
+    assert healthy.p_ko_best_move < 0.01  # only a rare critical hit from one set
+    weak = report_for(battler("swampert", hp=1), theirs)[1].payload
+    assert 0.9 < weak.p_ko_best_move <= 1
+    assert sum(t.probability * (t.ko_probability or 0) for t in weak.threats) > 1.5
+
+
+def test_an_unsupported_move_makes_the_headline_a_lower_bound():
+    _, result = report_for(battler("swampert"), opponent("garchomp", level=74), two_set_prior())
+    report = result.payload
+    assert any(t.unsupported_reason for t in report.threats)  # Counter, at probability 0.5
+    assert report.ko_lower_bound is True
+    assert report_for(battler("swampert"), opponent("garchomp"))[1].payload.ko_lower_bound is False
+
+
+def test_p_ko_best_move_stays_within_its_bounds_on_held_out_teams():
+    """max_m P(m) KO(m)  <=  p_ko_best_move  <=  sum_m P(m) KO(m), on 50 random matchups."""
+    rng = random.Random(20261011)
+    holdout = load_holdout(4)
+    our_sets = PRIOR4.all_sets()
+    informative = 0
+    for _ in range(50):
+        truth = rng.choice(holdout).pokemon_set
+        mine = rng.choice(our_sets).pokemon_set
+        max_hp = compute_stats(mine)[Stat.HP]
+        hp = rng.randint(1, max_hp)  # often low, so knockouts are possible
+        ours = BattlePokemon(
+            species=mine.species, level=mine.level, hp_fraction=hp / max_hp, hp_current=hp,
+            hp_max=max_hp, known_set=mine,
+        )
+        theirs = BattlePokemon(species=truth.species, level=truth.level, hp_fraction=1.0)
+        revealed = rng.sample(truth.moves, rng.randint(0, len(truth.moves)))
+        posterior = UNCLOAKER4.uncloak(truth.species.id, SetEvidence(revealed_moves=revealed))
+        result = threat_report(ours, theirs, posterior.payload, PRIOR4)
+        assert result.status is SubsystemStatus.OK
+        report = result.payload
+        per_move = [t.probability * (t.ko_probability or 0.0) for t in report.threats]
+        assert max(per_move) - 1e-9 <= report.p_ko_best_move <= sum(per_move) + 1e-9
+        for threat in report.threats:
+            if threat.worst_case_pct is not None:
+                assert threat.worst_crit_pct >= threat.worst_case_pct
+        informative += 0 < report.p_ko_best_move < 1
+    assert informative >= 10  # the bounds were exercised, not trivially 0 = 0 = 0

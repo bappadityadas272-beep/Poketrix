@@ -178,28 +178,36 @@ class ActionPrediction(Strict):
 class MoveThreat(Strict):
     """What one move the opponent may carry would do to our Pokémon.
 
-    The damage figures are conditional on the opponent having the move and on it landing as a
-    normal (non-critical) hit, averaged over the set hypotheses that carry it. Percentages are
-    of our Pokémon's maximum HP.
+    The damage figures are conditional on the opponent having the move and on it landing,
+    taken over the set hypotheses that carry it. Percentages are of our Pokémon's maximum HP.
+
+    Two "highest damage" figures exist, and a user interface must not mix them up:
+    `worst_crit_pct` is the most this move can do and is what should be shown as "worst case";
+    `worst_case_pct` is the most it can do without a critical hit and should be labelled so.
     """
 
     move_id: ShowdownId
     probability: float = Field(ge=0.0, le=1.0)  # P(the opponent carries this move)
-    expected_pct: float | None = Field(default=None, ge=0.0)  # mean damage of one use
-    worst_case_pct: float | None = Field(default=None, ge=0.0)  # highest roll of any hypothesis
+    expected_pct: float | None = Field(default=None, ge=0.0)  # mean damage of one normal hit
+    worst_case_pct: float | None = Field(default=None, ge=0.0)  # highest roll without a crit
+    worst_crit_pct: float | None = Field(default=None, ge=0.0)  # highest roll with a crit
     ko_probability: float | None = Field(default=None, ge=0.0, le=1.0)  # one use, crits included
     # Set when the calculator cannot evaluate the move: it is then unknown, never "no damage".
     unsupported_reason: str | None = None
 
     @model_validator(mode="after")
     def _unsupported_has_no_numbers(self) -> Self:
-        numbers = (self.expected_pct, self.worst_case_pct, self.ko_probability)
+        damage = (self.expected_pct, self.worst_case_pct, self.worst_crit_pct)
+        numbers = (*damage, self.ko_probability)
         if self.unsupported_reason is not None and any(n is not None for n in numbers):
             raise ValueError("an unsupported move carries no damage numbers")
-        if (self.expected_pct is None) != (self.worst_case_pct is None):
+        if len({n is None for n in damage}) > 1:
             raise ValueError("expected and worst-case damage are given together")
-        if self.expected_pct is not None and self.worst_case_pct + PROB_TOL < self.expected_pct:
-            raise ValueError("worst-case damage is below the expected damage")
+        if self.expected_pct is not None:
+            if self.worst_case_pct + PROB_TOL < self.expected_pct:
+                raise ValueError("worst-case damage is below the expected damage")
+            if self.worst_crit_pct + PROB_TOL < self.worst_case_pct:
+                raise ValueError("a critical hit cannot do less than the worst normal hit")
         return self
 
 
@@ -209,6 +217,13 @@ class ThreatReport(Strict):
     attacker_species: ShowdownId
     defender_species: ShowdownId
     threats: list[MoveThreat] = Field(default_factory=list)
+    # "If they attack, can they knock us out this turn?": for each possible set the KO chance
+    # of its best move, weighted by how likely the set is. Moves are correlated inside a set,
+    # so this cannot be read off the per-move figures.
+    p_ko_best_move: float = Field(default=0.0, ge=0.0, le=1.0)
+    # True when a possible move could not be evaluated and so counted as 0 above: the real
+    # chance is then at least `p_ko_best_move`, never less.
+    ko_lower_bound: bool = False
 
     @model_validator(mode="after")
     def _ordered(self) -> Self:

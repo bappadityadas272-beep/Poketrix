@@ -49,6 +49,11 @@ def _hypothesis_set(
     )
 
 
+def _ko_this_turn(evaluation: MoveEvaluation) -> float:
+    """Chance that one use knocks our Pokémon out; 0 for a status or unsupported move."""
+    return evaluation.ko[0].probability if evaluation.ko else 0.0
+
+
 @dataclass
 class _MoveTally:
     """Posterior-weighted totals for one move across the hypotheses that carry it."""
@@ -56,6 +61,7 @@ class _MoveTally:
     weight: float = 0.0
     expected: float = 0.0
     worst: float = 0.0
+    worst_crit: float = 0.0
     ko: float = 0.0
     has_damage: bool = False
     unsupported_reason: str | None = None
@@ -73,7 +79,10 @@ class _MoveTally:
         self.has_damage = True
         self.expected += weight * 100 * mean_hits * mean_roll / damage.defender_max_hp
         self.worst = max(self.worst, damage.max_pct)
-        self.ko += weight * (evaluation.ko[0].probability if evaluation.ko else 0.0)
+        # Where a critical hit is impossible or changes nothing, the two worst cases coincide.
+        top_crit = damage.crit_rolls[-1] if damage.crit_rolls else damage.rolls[-1]
+        self.worst_crit = max(self.worst_crit, 100 * max(hits) * top_crit / damage.defender_max_hp)
+        self.ko += weight * _ko_this_turn(evaluation)
 
     def threat(self, move_id: str) -> MoveThreat:
         probability = min(1.0, self.weight)
@@ -84,10 +93,12 @@ class _MoveTally:
             )
         if not self.has_damage:  # a status move
             return MoveThreat(move_id=move_id, probability=probability)
+        expected = self.expected / self.weight
+        worst = max(self.worst, expected)
         return MoveThreat(
             move_id=move_id, probability=probability,
-            expected_pct=self.expected / self.weight,
-            worst_case_pct=max(self.worst, self.expected / self.weight),
+            expected_pct=expected, worst_case_pct=worst,
+            worst_crit_pct=max(self.worst_crit, worst),
             ko_probability=min(1.0, self.ko / self.weight),
         )
 
@@ -101,6 +112,7 @@ def _report(
     # A move's damage depends on the attacker's item, ability and spread, not on its other
     # moves, and many hypotheses share those: evaluate each combination once.
     evaluated: dict[tuple, MoveEvaluation] = {}
+    p_ko_best_move = 0.0
     for hypothesis in posterior.hypotheses:
         if hypothesis.posterior <= 0:
             continue
@@ -114,10 +126,15 @@ def _report(
                     attacker, ours, dex.move(move_id), field, our_conditions, their_conditions
                 )
             tallies.setdefault(move_id, _MoveTally()).add(hypothesis.posterior, evaluated[key])
+        # Under this hypothesis the opponent's best move for a knockout is one specific move.
+        best = max(_ko_this_turn(evaluated[(move_id, *stats_key)]) for move_id in hypothesis.moves)
+        p_ko_best_move += hypothesis.posterior * best
     threats = [tally.threat(move_id) for move_id, tally in tallies.items()]
     threats.sort(key=lambda threat: (-threat.probability, threat.move_id))
     return ThreatReport(
-        attacker_species=theirs.species.id, defender_species=ours.species.id, threats=threats
+        attacker_species=theirs.species.id, defender_species=ours.species.id, threats=threats,
+        p_ko_best_move=min(1.0, p_ko_best_move),
+        ko_lower_bound=any(threat.unsupported_reason is not None for threat in threats),
     )
 
 
