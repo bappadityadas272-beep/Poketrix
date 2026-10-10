@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03c built on `task/03c-gens-3-2-1`, awaiting review)
+Last updated: 2026-10-10 (Task 03c approved; orders 3–4 issued: close Phase 3, propose Task 04)
 
 ## Status at a glance
 
@@ -9,8 +9,8 @@ Last updated: 2026-10-10 (Task 03c built on `task/03c-gens-3-2-1`, awaiting revi
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | Gen 4 done, merged; 03c (Gens 3, 2, 1) built, **awaiting review** | `cp-03a`, `cp-03b`; `cp-03c` pending |
-| 4 | Bayesian set uncloaker | Not started | |
+| 3 | Math layer (type chart, stats, damage, KO odds) | Gen 4 merged; 03c (Gens 3, 2, 1) **approved**, merge + tag pending (Order 3) | `cp-03a`, `cp-03b`, `cp-03c` |
+| 4 | Bayesian set uncloaker | Next: design proposal (Order 4) | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
@@ -647,7 +647,7 @@ multi-hit move into a resist berry that would activate.
 
 Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design proposal.
 
-## Task 03c — Gens 3, 2 and 1 damage engines (built 2026-10-10, awaiting review)
+## Task 03c — Gens 3, 2 and 1 damage engines (approved 2026-10-10)
 
 Branch `task/03c-gens-3-2-1`. Not merged, not tagged, not pushed.
 Tests: **678 passing** (352 before + 326 new); `ruff check src tests` is clean.
@@ -742,6 +742,105 @@ I compared only the parts of the simulator I read for the odds rules; this is no
 
 On approval: merge `--no-ff`, tag `cp-03c`, log it, push. That completes Phase 3 (Math layer).
 Next is Task 04, the Bayesian set uncloaker, starting with a design proposal.
+
+## Review of Task 03c (2026-10-10, reviewer: Claude in claude.ai, on behalf of the user)
+
+Verdict: **APPROVED.** This completes Phase 3.
+
+I checked the following on the user's machine:
+
+- **Tests:** 678 of 678 pass on `task/03c-gens-3-2-1` (commit `df05740`).
+- **Gen 4, 185 of 186 hand-picked:** expected. The one case not compared is the multi-hit move into a resist berry,
+  which is tested to report *unsupported*, carried over from 03b.
+- **Gen 1–2 odds rules:** checked against known game behaviour.
+  - Gen 1: crit rate is base Speed ÷ 2 out of 256 (Tauros gets 55/256), high-crit moves get ×8 capped at 255, and the Focus Energy bug lowers the rate.
+  - Gen 1 multi-hit is 2/3/4/5 hits with chances 3/8, 3/8, 1/8, 1/8, and every hit reuses one roll.
+  - Gen 2 crit stages are 17, 32, 64, 85 and 128 out of 256.
+  - All correct.
+- **Divergence calls (1–4):** I agree with each. Using the simulator's crit rate for Gen 1 high-crit moves
+  is more correct than the oracle's "always crit". Reporting Present as unsupported, and OHKO
+  damage as the target's remaining HP, are both right for KO-probability purposes.
+- **Shared-module refactor:** Gen 4 behaviour is unchanged (its oracle cases still match), and no generation
+  imports another. Good structure.
+
+Findings. None block the merge, but R1 must be done before the merge commit (Order 3).
+
+- **R1: line endings.** Git on Windows checks files out with CRLF, so any non-Windows git (CI, the
+  reviewer's Linux shell, a future Mac) sees every file as modified: 26 files showed as changed with zero
+  real changes. Add a `.gitattributes` with `* text=auto eol=lf` and mark `*.json`, `*.py`, `*.md`
+  and `*.mjs` as `text eol=lf`. Then run `git add --renormalize .` and commit it on the task branch as
+  "chore: normalise line endings". Check that `pytest` is still green afterwards, because the fixtures are JSON.
+- **R2: fixture log.** The Gen 4 random sweep went from 295 of 300 (03b) to 293 of 300 cases compared, because the
+  generator code changed. Per-generation seeds already keep the generations independent, which is good. In the 03c result
+  table, replace "as in 03b" with the 7 skipped Gen 4 cases by name, and record each fixture's
+  seed and the `@smogon/calc` version in the tracker. A future regeneration then shows up as a deliberate change.
+- **R3: Gen 1 Explosion.** Add one test that pins our behaviour (the oracle's order) and names the
+  one-point simulator difference in its docstring, so nobody later "fixes" it by accident.
+- **R4: latency.** Gens 1–2 are near the 5 ms report target, and Gen 1 multi-hit KO odds are slower (up to
+  312 values). No action now. Phase 6 will measure the end-to-end turn against the 500 ms budget, and
+  if Gen 1 is the bottleneck we'll profile it then. This follows the "upgrade only when proven" rule.
+- **R5: callers of unsupported moves.** Later phases must treat the unsupported list (Counter, Bide, Present, …) as a
+  `SubsystemResult` with status `fallback` or `error`, and never as zero damage. Carry this forward to Phase 6.
+
+## Orders for Claude Code, batch 2 (do these in order, stopping where marked)
+
+### Order 3: close Task 03c and Phase 3 (no stop needed, the user has approved)
+1. On `task/03c-gens-3-2-1`, do R1 (line endings) as its own commit, then R2 and R3. Run `pytest` and
+   `ruff check src tests`; both must be green.
+2. Run `git switch main`, then `git merge --no-ff task/03c-gens-3-2-1`, then
+   `git tag -a cp-03c -m "Math layer: Gens 3, 2, 1 damage engines"`.
+3. Add cp-03c to `docs/CHECKPOINTS.md` with the test count, mark Phase 3 as done in this table and in
+   `README.md`, and push with `git push origin main --tags`.
+4. Report the push result in one line under this order.
+
+### Order 4: Task 04 design proposal, the Bayesian set uncloaker. **STOP after the proposal.**
+Branch: `task/04-bayes-uncloaker`. Write the proposal as a new section in this tracker. This is the first
+layer that is genuinely machine learning, so the proposal must show how we will **measure** it, not
+just how we will build it.
+
+The proposal must cover:
+
+1. **Where the prior comes from.** First read Showdown's Random Battle data for Gens 1–4 and report the
+   actual file layout. The current data may be *movepools plus generation rules* (roles, essential
+   and exclusive moves) rather than a list of finished sets with frequencies. If so, the true prior is
+   whatever the team generator produces. Compare these options and recommend one:
+   - **(a) Sample the official generator.** Run Showdown's own random-team generator (the
+     `pokemon-showdown` npm package, Node at build time only, the same pattern as `build_dex`) for N teams per
+     gen, and count the distinct (moves, item, ability) sets per species and level. This is the
+     empirical prior. Propose N, and show how much counts move between two seeds, to justify N.
+   - **(b) Parse the movepools** and derive set probabilities analytically. Exact if it works, but
+     it means re-implementing generator logic, so it's fragile.
+   - **(c) Smogon usage statistics** for the Gen 1–4 Random Battle formats, if they exist for these formats.
+   Record the source version and pin it, as was done for `@pkmn/dex` and `@smogon/calc`.
+2. **What a hypothesis is.** Is it a distinct (frozenset of moves, item, ability) tuple, and what about
+   the spread? In Random Battles the level, EVs and IVs are mostly fixed per species. Say so if the data confirms it.
+3. **Evidence and updates.** For 04a: revealed moves, item (including consumed or knocked off, such as Leftovers recovery
+   or a berry eaten) and ability. Bayes over the hypothesis table gives `SetPosterior`, with `move_probability`,
+   item and ability marginals. Also cover negative evidence: a Pokémon that has used 4 distinct moves has
+   revealed its whole moveset.
+   For 04b, a proposal only, built later: **damage-based evidence.** The likelihood of an observed damage %
+   under each hypothesis's stats and item, using our calc engines, for example telling Choice Band from Life Orb, or
+   detecting Life Orb recoil. Recommend whether 04b is part of Phase 4 or deferred.
+4. **Zero-probability safety.** Sampling can miss rare sets, so real evidence may contradict every
+   hypothesis. Propose the fallback, for example backing off to per-move marginals with smoothing, returned as
+   `SubsystemResult(status="fallback")`, never an exception. `SetPosterior`'s schema validator must
+   still hold.
+5. **Evaluation, the ML part.** Build a held-out test set by sampling *fresh* generator teams with a
+   different seed. Reveal k = 0..4 random moves (plus the item and ability where shown), and report:
+   - the share of cases where the true set keeps a non-zero posterior (target 100% on the main path);
+   - log-loss and Brier score of the posterior over sets, and of P(move) for the unrevealed moves;
+   - calibration: a reliability table of predicted P(move) against observed frequency, in 10 bins;
+   - top-1 and top-3 set accuracy as k grows.
+   Propose the targets, and commit the evaluation script so the numbers can be reproduced.
+6. **Consumer contract.** Show how the Math layer uses the posterior: a *threat report*, meaning the
+   expected and worst-case damage to our active Pokémon weighted by P(move), with no new calc code. Propose the function
+   signature only.
+7. **Size and speed.** The prior tables are committed per gen; give their size estimate and a cap of about 5 MB in
+   total. One posterior update must take under 5 ms per Pokémon (the ML budget is under 150 ms per turn).
+8. **Decisions to ask the user,** with a recommendation for each: the prior source, N, hypothesis
+   granularity, whether 04b is in Phase 4, and the evaluation targets.
+
+Then **stop** and ask the user to approve or adjust the proposal before writing any code.
 
 ## Standing rules
 
