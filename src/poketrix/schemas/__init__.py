@@ -7,6 +7,7 @@ from .enums import (
     FixedDamage,
     Generation,
     MoveCategory,
+    MoveFlag,
     PlayerSlot,
     PokemonType,
     SideCondition,
@@ -30,6 +31,7 @@ from .outputs import (
 from .pokemon import (
     BaseStats,
     BattlePokemon,
+    Item,
     Move,
     Nature,
     PokemonSet,

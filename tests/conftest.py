@@ -13,12 +13,12 @@ from poketrix.schemas import (
 )
 
 
-def species(gen, sid, dex, types, stats, abilities=()):
+def species(gen, sid, dex, types, stats, abilities=(), weight_kg=50.0):
     hp, atk, df, spa, spd, spe = stats
     return Species(
         id=sid, name=sid.title(), generation=gen, dex_number=dex, types=tuple(types),
         base_stats=BaseStats(hp=hp, atk=atk, **{"def": df}, spa=spa, spd=spd, spe=spe),
-        possible_abilities=list(abilities),
+        possible_abilities=list(abilities), weight_kg=weight_kg,
     )
 
 

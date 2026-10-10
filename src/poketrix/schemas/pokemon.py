@@ -24,6 +24,7 @@ from .enums import (
     FixedDamage,
     Generation,
     MoveCategory,
+    MoveFlag,
     PokemonType,
     Stat,
     Status,
@@ -74,6 +75,7 @@ class Species(Strict):
     dex_number: int = Field(ge=1)
     types: tuple[PokemonType] | tuple[PokemonType, PokemonType]
     base_stats: BaseStats
+    weight_kg: float = Field(gt=0)
     possible_abilities: list[ShowdownId] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -109,6 +111,7 @@ class Move(Strict):
     ignores_type_chart: bool = False
     crit_ratio: int = Field(default=1, ge=1, le=6)  # Showdown's critRatio; 1 = normal
     multihit: tuple[int, int] | None = None  # (min, max) hits per use
+    flags: frozenset[MoveFlag] = frozenset()
 
     @model_validator(mode="after")
     def _gen_legal(self) -> Self:
@@ -130,6 +133,33 @@ class Move(Strict):
                 f"before Gen 4 a {self.type.value}-type damaging move must be "
                 f"{category_for_type(self.type).value}"
             )
+        return self
+
+
+class Item(Strict):
+    """A held item *as it exists in one generation*, with the data the Math layer keys on."""
+
+    id: ShowdownId
+    name: str
+    generation: Generation
+    boosts_type: PokemonType | None = None  # powers up moves of this type (Charcoal, plates)
+    plate_type: PokemonType | None = None  # Judgment's type while held
+    resists_type: PokemonType | None = None  # berry that halves one hit of this type
+    fling_power: int | None = Field(default=None, ge=1, le=255)
+    natural_gift_type: PokemonType | None = None
+    natural_gift_power: int | None = Field(default=None, ge=1, le=255)
+
+    @model_validator(mode="after")
+    def _gen_legal(self) -> Self:
+        r = rules_for(self.generation)
+        if not r.has_items:
+            raise ValueError(f"held items do not exist in Gen {self.generation}")
+        types = (self.boosts_type, self.plate_type, self.resists_type, self.natural_gift_type)
+        bad = [t.value for t in types if t is not None and t not in r.pokemon_types]
+        if bad:
+            raise ValueError(f"type(s) {bad} not available in Gen {self.generation}")
+        if (self.natural_gift_type is None) != (self.natural_gift_power is None):
+            raise ValueError("Natural Gift type and power go together")
         return self
 
 

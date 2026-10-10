@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from calc_helpers import DEX4, battler
 
-from poketrix.calc import UnsupportedMoveError, compute_stats, engine_for
+from poketrix.calc import compute_stats, engine_for
 from poketrix.schemas import FieldState, SideCondition
 
 FIXTURE = json.loads(
@@ -21,19 +21,25 @@ SWEEP = [c for c in CASES if "sweep" in c["tags"]]
 ENGINE = engine_for(4)
 
 
-def side(spec, volatiles=()):
+class Unsupported(Exception):
+    """The engine declined to evaluate the case."""
+
+
+def side(spec, extra_volatiles=()):
+    # The oracle's "ability on" switch is a volatile in a real battle (Flash Fire, Slow Start).
+    volatiles = [*extra_volatiles, *([spec["ability"]] if spec["ability_on"] else [])]
     return battler(
         spec["species"], level=spec["level"], nature=spec["nature"], ability=spec["ability"],
-        ivs=spec["ivs"], evs=spec["evs"], boosts=spec["boosts"], status=spec["status"],
-        hp=spec["hp"], volatiles=volatiles,
+        item=spec["item"], ivs=spec["ivs"], evs=spec["evs"], boosts=spec["boosts"],
+        status=spec["status"], hp=spec["hp"], volatiles=volatiles,
     )
 
 
 def run(case):
-    """(attacker, defender, engine result) for one golden case."""
+    """(attacker, defender, engine outcome) for one golden case."""
     field = case["field"]
     attacker = side(case["attacker"])
-    defender = side(case["defender"], volatiles=["foresight"] if field["foresight"] else [])
+    defender = side(case["defender"], ["foresight"] if field["foresight"] else [])
     conditions = {
         condition: 5
         for condition, key in (
@@ -42,33 +48,43 @@ def run(case):
         if field[key]
     }
     state = FieldState(weather=field["weather"], gravity_turns_left=5 if field["gravity"] else 0)
-    result = ENGINE.damage(attacker, defender, DEX4.move(case["move"]), state, conditions)
-    return attacker, defender, result
+    outcome = ENGINE.evaluate(attacker, defender, DEX4.move(case["move"]), state, conditions)
+    return attacker, defender, outcome
 
 
 def assert_matches_oracle(case):
     expected = case["expected"]
-    attacker, defender, result = run(case)
+    attacker, defender, outcome = run(case)
     assert {s.value: v for s, v in compute_stats(attacker.known_set).items()} == expected[
         "attacker_stats"
     ]
     assert {s.value: v for s, v in compute_stats(defender.known_set).items()} == expected[
         "defender_stats"
     ]
+    if outcome.damage is None:
+        raise Unsupported(outcome.unsupported_reason)
+    # We never return per-hit rolls when the hits of one use differ from each other.
+    assert not expected["later_hits_differ"]
+    result = outcome.damage
     assert list(result.rolls) == expected["rolls"]
-    # No separate crit rolls means a critical hit changes nothing (fixed damage, immunity).
+    # No separate crit rolls means a critical hit changes nothing or cannot happen.
     crit_rolls = result.rolls if result.crit_rolls is None else result.crit_rolls
     assert list(crit_rolls) == expected["crit_rolls"]
 
 
 def test_fixture_is_big_enough_and_from_the_pinned_oracle():
     assert FIXTURE["source"] == {"oracle": "@smogon/calc", "version": "0.12.0", "generation": 4}
-    assert len(HAND_PICKED) >= 30
-    assert len(SWEEP) >= 200
+    assert len(HAND_PICKED) >= 150
+    assert len(SWEEP) >= 300
 
 
 @pytest.mark.parametrize("case", HAND_PICKED, ids=lambda c: f"{c['id']}:{'+'.join(c['tags'])}")
 def test_hand_picked_case_matches_oracle(case):
+    if "resist-berry" in case["tags"] and "multi-hit" in case["tags"]:
+        assert case["expected"]["later_hits_differ"]
+        with pytest.raises(Unsupported, match="resist berry"):
+            assert_matches_oracle(case)
+        return
     assert_matches_oracle(case)
 
 
@@ -77,12 +93,12 @@ def test_random_sweep_matches_oracle():
     for case in SWEEP:
         try:
             assert_matches_oracle(case)
-        except UnsupportedMoveError:
-            unsupported.append(case["move"])
+        except Unsupported as reason:
+            unsupported.append(f"{case['move']}: {reason}")
             continue
         except AssertionError:
             mismatches.append(f"{case['id']} ({case['move']})")
         compared += 1
     assert not mismatches
-    # Moves the 03a engine declines to evaluate are skipped; most of the sweep must still count.
-    assert compared >= 180, f"only {compared} compared; unsupported: {sorted(set(unsupported))}"
+    # Moves the engine declines to evaluate are skipped; nearly all of the sweep must count.
+    assert compared >= 280, f"only {compared} compared; unsupported: {sorted(set(unsupported))}"

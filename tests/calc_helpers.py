@@ -8,13 +8,13 @@ DEX4 = Dex(4)
 
 
 def battler(
-    species, *, level=100, nature=None, ability=None, ivs=None, evs=None, boosts=None,
-    status=None, hp=None, volatiles=(), moves=("tackle",), gen_dex=DEX4,
+    species, *, level=100, nature=None, ability=None, item=None, ivs=None, evs=None,
+    boosts=None, status=None, hp=None, volatiles=(), moves=("tackle",), gen_dex=DEX4,
 ) -> BattlePokemon:
     """A BattlePokemon with a full known set; `hp` is the current HP (default: full)."""
     sp = gen_dex.species(species)
     known_set = PokemonSet(
-        species=sp, level=level, moves=list(moves), nature=nature,
+        species=sp, level=level, moves=list(moves), nature=nature, item=item,
         ability=ability or sp.possible_abilities[0],
         spread=StatSpread(ivs=ivs or {}, evs=evs or {}),
     )

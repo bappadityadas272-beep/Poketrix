@@ -1,5 +1,6 @@
 // Exports the Gen 1-4 dex snapshot from @pkmn/dex (Pokémon Showdown's data) to
-// data/dex/gen{1..4}/{species,moves,typechart}.json and data/dex/natures.json.
+// data/dex/gen{1..4}/{species,moves,typechart}.json, data/dex/gen{2..4}/items.json and
+// data/dex/natures.json.
 // Build-time only; Python reads the committed JSON.
 //
 //   cd scripts && npm install && npm run build-dex
@@ -13,9 +14,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Dex, toID } from '@pkmn/dex';
+// Which item boosts or resists which type is code, not data, in Showdown; the damage oracle
+// keeps it as lookup functions, so those two columns are read from there.
+import oracleItems from '@smogon/calc/dist/items.js';
 
 const GENS = [1, 2, 3, 4];
 const FIRST_GEN_WITH_ABILITIES = 3;
+const FIRST_GEN_WITH_ITEMS = 2;
+const FIRST_GEN_WITH_BERRY_EFFECTS = 4; // resist berries, Fling, Natural Gift
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(HERE, '..', 'data', 'dex');
 
@@ -37,6 +43,7 @@ function speciesRecord(dex, s) {
     dex_number: s.num,
     types: s.types.map((t) => t.toLowerCase()),
     base_stats: s.baseStats,
+    weight_kg: s.weightkg,
     possible_abilities: abilities,
   };
 }
@@ -94,6 +101,34 @@ function moveRecord(gen, m) {
   if (m.critRatio !== 1) record.crit_ratio = m.critRatio;
   if (m.multihit) record.multihit = [m.multihit].flat().slice(0, 2);
   if (record.multihit?.length === 1) record.multihit.push(record.multihit[0]);
+  const flags = [
+    m.flags.punch && 'punch',
+    m.flags.sound && 'sound',
+    (m.recoil || m.hasCrashDamage) && 'recoil',
+  ].filter(Boolean);
+  if (flags.length) record.flags = flags;
+  return record;
+}
+
+function itemRecord(dex, item) {
+  // A type name, lowercased, if that type exists in this generation.
+  const typeIn = (name) => {
+    const type = name && dex.types.get(name);
+    return type && type.exists && !type.isNonstandard ? name.toLowerCase() : undefined;
+  };
+  const record = { id: item.id, name: item.name };
+  const boosts = typeIn(oracleItems.getItemBoostType(item.name));
+  if (boosts) record.boosts_type = boosts;
+  if (typeIn(item.onPlate)) record.plate_type = typeIn(item.onPlate);
+  if (dex.gen >= FIRST_GEN_WITH_BERRY_EFFECTS) {
+    const resists = typeIn(oracleItems.getBerryResistType(item.name));
+    if (resists) record.resists_type = resists;
+    if (item.fling?.basePower) record.fling_power = item.fling.basePower;
+    if (item.naturalGift) {
+      record.natural_gift_type = item.naturalGift.type.toLowerCase();
+      record.natural_gift_power = item.naturalGift.basePower;
+    }
+  }
   return record;
 }
 
@@ -139,6 +174,14 @@ for (const gen of GENS) {
   writeRecords(join(dir, 'moves.json'), moves);
   writeFileSync(join(dir, 'typechart.json'), `${JSON.stringify(typeChart(dex), null, 1)}
 `);
+  if (gen >= FIRST_GEN_WITH_ITEMS) {
+    const items = dex.items
+      .all()
+      .filter(existsIn(gen))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((item) => itemRecord(dex, item));
+    writeRecords(join(dir, 'items.json'), items);
+  }
   console.log(`gen${gen}: ${species.length} species, ${moves.length} moves`);
 }
 

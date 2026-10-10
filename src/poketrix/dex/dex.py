@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from pathlib import Path
 
-from poketrix.schemas import Generation, Move, Species, to_id
+from poketrix.schemas import Generation, Item, Move, Species, to_id
 
 from .snapshot import DEFAULT_DATA_DIR, load_snapshot
 
@@ -40,11 +40,17 @@ class Dex:
     def move(self, name_or_id: str) -> Move:
         return self._get("move", self._snapshot.moves, name_or_id)
 
+    def item(self, name_or_id: str) -> Item:
+        return self._get("item", self._snapshot.items, name_or_id)
+
     def all_species(self) -> list[Species]:
         return list(self._snapshot.species.values())
 
     def all_moves(self) -> list[Move]:
         return list(self._snapshot.moves.values())
+
+    def all_items(self) -> list[Item]:
+        return list(self._snapshot.items.values())
 
     def _get(self, kind: str, table: Mapping, name_or_id: str):
         entry_id = to_id(name_or_id)

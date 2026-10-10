@@ -52,6 +52,14 @@ class FixedDamage(str, Enum):
     REACTIVE = "reactive"  # Counter, Mirror Coat, Metal Burst, Bide: depends on damage taken
 
 
+class MoveFlag(str, Enum):
+    """Move properties that abilities key on (only the ones the Math layer needs)."""
+
+    PUNCH = "punch"  # Iron Fist
+    SOUND = "sound"  # Soundproof
+    RECOIL = "recoil"  # recoil or crash damage: Reckless
+
+
 class Stat(str, Enum):
     HP = "hp"
     ATK = "atk"

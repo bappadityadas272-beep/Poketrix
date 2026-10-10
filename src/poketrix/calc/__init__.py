@@ -2,7 +2,7 @@
 
 from poketrix.schemas import Generation
 
-from .engine import DamageEngine, DamageResult, UnsupportedMoveError, engine_for, register_engine
+from .engine import DamageEngine, DamageResult, Outcome, engine_for, register_engine
 from .gen4 import Gen4Engine
 from .hidden_power import hidden_power
 from .ko import ko_chances
@@ -15,7 +15,7 @@ register_engine(Generation.DPP, Gen4Engine())
 __all__ = [
     "DamageEngine",
     "DamageResult",
-    "UnsupportedMoveError",
+    "Outcome",
     "apply_stage",
     "build_report",
     "compute_stats",

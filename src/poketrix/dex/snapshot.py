@@ -13,18 +13,20 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from poketrix.schemas import Generation, Move, Nature, PokemonType, Species, rules_for
+from poketrix.schemas import Generation, Item, Move, Nature, PokemonType, Species, rules_for
 
 # src/poketrix/dex/snapshot.py -> repo root
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "dex"
 
 _Record = TypeVar("_Record", bound=BaseModel)
+_EMPTY = MappingProxyType({})
 
 
 @dataclass(frozen=True)
 class Snapshot:
     species: MappingProxyType  # id -> Species
     moves: MappingProxyType  # id -> Move
+    items: MappingProxyType  # id -> Item (empty in Gen 1)
 
 
 def _read_json(path: Path):
@@ -48,9 +50,12 @@ def _load_records(path: Path, model: type[_Record], extra: dict) -> MappingProxy
 @cache
 def load_snapshot(gen: Generation, data_dir: Path = DEFAULT_DATA_DIR) -> Snapshot:
     gen_dir = data_dir / f"gen{int(gen)}"
+    stamp = {"generation": gen}
+    has_items = rules_for(gen).has_items
     return Snapshot(
-        species=_load_records(gen_dir / "species.json", Species, {"generation": gen}),
-        moves=_load_records(gen_dir / "moves.json", Move, {"generation": gen}),
+        species=_load_records(gen_dir / "species.json", Species, stamp),
+        moves=_load_records(gen_dir / "moves.json", Move, stamp),
+        items=_load_records(gen_dir / "items.json", Item, stamp) if has_items else _EMPTY,
     )
 
 
