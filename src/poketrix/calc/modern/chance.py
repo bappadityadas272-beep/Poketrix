@@ -1,7 +1,8 @@
-"""Probabilities around a hit: accuracy, critical-hit rate and multi-hit counts.
+"""Gens 3-4: probabilities around a hit: accuracy, critical-hit rate and multi-hit counts.
 
-The damage oracle takes these as inputs, so the rules here follow the Showdown simulator's Gen 4
-code instead (data/mods/gen4/scripts.ts, abilities.ts, items.ts; sim/battle-actions.ts).
+The damage oracle takes these as inputs, so the rules here follow the Showdown simulator's code
+instead (data/mods/gen4 and gen3: scripts.ts, abilities.ts, items.ts; sim/battle-actions.ts).
+The two generations share every rule; only Lax Incense's strength differs.
 Accuracy is kept as a real number; the simulator's integer rounding can differ by up to one
 percentage point.
 """
@@ -9,9 +10,9 @@ percentage point.
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from poketrix.schemas import BoostStat, FixedDamage, Weather
+from poketrix.schemas import BoostStat, FixedDamage, Generation, Weather
 
-from .context import Context, Side
+from ..context import Context, Side
 from .speed import moves_first
 
 _CRIT_CHANCE = (1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2)  # by crit stage, 1-based
@@ -20,7 +21,10 @@ _SIGNATURE_CRIT_ITEMS = {("luckypunch", "chansey"), ("stick", "farfetchd")}
 _BLOCKS_CRITS = frozenset({"battlearmor", "shellarmor"})
 _EVASION_IGNORERS = frozenset({"foresight", "odorsleuth", "miracleeye"})  # volatiles
 _EVASIVE_IN_WEATHER = {"sandveil": Weather.SANDSTORM, "snowcloak": Weather.HAIL}
-_EVASION_ITEMS = frozenset({"brightpowder", "laxincense"})
+_EVASION_ITEM_MULTIPLIER = {
+    Generation.DPP: {"brightpowder": 0.9, "laxincense": 0.9},
+    Generation.ADV: {"brightpowder": 0.9, "laxincense": 0.95},
+}
 _TWO_TO_FIVE_HITS = MappingProxyType({2: 3 / 8, 3: 3 / 8, 4: 1 / 8, 5: 1 / 8})
 
 
@@ -91,8 +95,7 @@ def hit_chance(c: Context) -> float:
         accuracy *= 0.8
     if defender.ability == "tangledfeet" and defender.has_volatile("confusion"):
         accuracy *= 0.5
-    if defender.item_id in _EVASION_ITEMS:
-        accuracy *= 0.9
+    accuracy *= _EVASION_ITEM_MULTIPLIER[c.gen].get(defender.item_id, 1.0)
     if c.gravity:
         accuracy *= 5 / 3
     return min(1.0, accuracy / 100)

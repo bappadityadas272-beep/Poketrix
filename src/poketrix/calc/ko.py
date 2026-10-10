@@ -9,8 +9,9 @@ no healing, residual damage, hazards or switching.
 from bisect import bisect_left
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from fractions import Fraction
 from functools import cache
-from math import comb
+from math import comb, lcm
 
 from poketrix.schemas import KOChance
 
@@ -87,15 +88,30 @@ def _binomial(n: int, k: int, p: float) -> float:
     return comb(n, k) * p**k * (1 - p) ** (n - k)
 
 
+def _whole_use_rolls(rolls: Sequence[int], hit_distribution: Mapping[int, float]) -> list[int]:
+    """Equally likely damage totals of one use whose hits all repeat the same roll."""
+    odds = {hits: Fraction(p).limit_denominator(256) for hits, p in hit_distribution.items()}
+    scale = lcm(*(f.denominator for f in odds.values()))
+    return [
+        hits * roll for hits, f in odds.items() for _ in range(int(f * scale)) for roll in rolls
+    ]
+
+
 def ko_chances(
     rolls: Sequence[int], crit_rolls: Sequence[int] | None, crit_chance: float,
     hit_chance: float, hp: int, max_hits: int = MAX_HITS,
-    hit_distribution: Mapping[int, float] | None = None,
+    hit_distribution: Mapping[int, float] | None = None, hits_share_roll: bool = False,
 ) -> list[KOChance]:
     """P(the defender, at `hp`, is knocked out within n uses) for n = 1..max_hits.
 
-    `hit_distribution` (hits per landed use -> probability) is given for multi-hit moves.
+    `hit_distribution` (hits per landed use -> probability) is given for multi-hit moves. With
+    `hits_share_roll` every hit of a use repeats the first hit's roll and crit (Gen 1), which
+    makes the whole use behave like one hit with a longer roll list.
     """
+    if hits_share_roll and hit_distribution is not None:
+        rolls = _whole_use_rolls(rolls, hit_distribution)
+        crit_rolls = None if crit_rolls is None else _whole_use_rolls(crit_rolls, hit_distribution)
+        hit_distribution = None
     per_use = {1: 1.0} if hit_distribution is None else hit_distribution
     if crit_rolls is None:
         crit_chance = 0.0

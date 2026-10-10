@@ -1,9 +1,9 @@
-"""Effective Speed and turn order (Gyro Ball, Payback, Zoom Lens). Follows the oracle."""
+"""Gens 3-4: effective Speed and turn order (Gyro Ball, Payback, Zoom Lens). Follows the oracle."""
 
 from poketrix.schemas import BoostStat, Stat, Status, Weather
 
+from ..context import SPEED_HALVING_ITEMS, Context, Side
 from ..stats import apply_stage
-from .context import SPEED_HALVING_ITEMS, Context, Side
 
 _DOUBLE, _ONE_AND_A_HALF, _HALF = 8192, 6144, 2048  # modifiers in 4096ths
 _WEATHER_SPEED_ABILITY = {"chlorophyll": Weather.SUN, "swiftswim": Weather.RAIN}

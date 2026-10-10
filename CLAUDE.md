@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-03b` (2026-10-10)
+## Current state — `cp-03b` merged; Task 03c built on `task/03c-gens-3-2-1`, awaiting review (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -54,6 +54,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
+| (cp-03c pending) | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 678 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -81,20 +82,26 @@ Dex (`from poketrix.dex import Dex, UnknownDexEntryError`):
   - Abilities are empty in Gens 1–2 and limited to those existing in that gen from Gen 3.
   - Learnsets are deferred.
 
-Calc (`from poketrix.calc import ...`), Gen 4 only so far:
+Calc (`from poketrix.calc import ...`), all four generations:
 - `evaluate_move(attacker, defender, move, field, defender_conditions) -> MoveEvaluation` and
   `build_report(...) -> SubsystemResult[MathReport]`. Both Pokémon need a `known_set`.
 - One engine per generation behind the `DamageEngine` protocol (`engine.py`, one method:
-  `evaluate(...) -> Outcome`); the `gen4/` package is the only one registered. Add Gens 3 → 1
-  as new engines, never by branching inside `gen4/`.
-- `gen4/` is split by formula stage: `engine` (skeleton), `context`, `movetype`, `power`,
-  `modifiers`, `speed`, `chance`. A new ability or item rule goes into the stage it belongs to,
-  in the oracle's order; the skeleton does not change.
-- Accuracy, crit stages and multi-hit counts are not in the oracle; they follow the Showdown
-  simulator's Gen 4 source and are tested by hand and by brute force.
-- The oracle is `@smogon/calc` 0.12.0: `tests/fixtures/calc_golden_gen4.json` (rebuild with
-  `cd scripts && npm run build-calc-golden`). Every roll must match exactly; when adding a
-  mechanic, add tagged cases to the generator first.
+  `evaluate(...) -> Outcome`), all extending `base.BaseEngine`. No generation's package imports
+  another's:
+  - `gen4/` and `gen3/` extend `modern.ModernEngine` (immunities, fixed damage, multi-hit) and
+    supply only their formula (`engine.py`) and its stage rules (`modifiers.py`, `power.py`).
+  - `classic/` holds `ClassicEngine` with `Gen1Engine` and `Gen2Engine`: one formula, and each
+    subclass fills in the steps that differ.
+  - Shared by all: `context.py`, `power_rules.py`, `stats.py`, `typechart.py`, `ko.py`.
+- A new ability or item rule goes into the stage it belongs to, in the oracle's order; the
+  formula skeleton does not change. A later generation is a new package, not a branch.
+- Gens 1–2 spreads are DVs (0–15) and Stat Exp (0–65535) in `StatSpread.ivs` / `.evs`; a
+  missing value is the maximum.
+- Accuracy, crit rate and multi-hit counts are not in the oracle; they follow the Showdown
+  simulator's source for each generation and are tested by hand and by brute force.
+- The oracle is `@smogon/calc` 0.12.0: `tests/fixtures/calc_golden_gen{1..4}.json` (rebuild with
+  `cd scripts && npm run build-calc-golden`; cases in `scripts/golden_cases/`). Every roll must
+  match exactly; when adding a mechanic, add tagged cases to the generator first.
 - A move the engine cannot evaluate returns `unsupported_reason`, never a guessed number.
 - State that is not a stat stage is read from `BattlePokemon.volatiles`: `flashfire`,
   `slowstart`, `unburden`, `charge`, `focusenergy`, `foresight`, `confusion`.

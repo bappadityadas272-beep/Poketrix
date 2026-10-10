@@ -18,12 +18,13 @@ from poketrix.calc import (
     hidden_power,
     ko_chances,
 )
-from poketrix.calc.gen4.context import build_context
-from poketrix.calc.gen4.power import base_power
+from poketrix.calc.context import build_context
+from poketrix.calc.gen4.power import POWER_RULES
+from poketrix.calc.power_rules import resolve_power
 from poketrix.dex import Dex
 from poketrix.schemas import (
     FieldState,
-    PokemonSet,
+    Generation,
     PokemonType,
     SideCondition,
     Stat,
@@ -76,12 +77,9 @@ def test_shedinja_always_has_1_hp():
     assert compute_stats(battler("shedinja", evs={"hp": 252}).known_set)[Stat.HP] == 1
 
 
-def test_unknown_nature_and_pre_gen3_stats_are_rejected():
+def test_unknown_nature_is_rejected():
     with pytest.raises(ValueError, match="unknown nature 'notanature'"):
         battler("garchomp", nature="notanature")
-    gengar1 = PokemonSet(species=Dex(1).species("gengar"), moves=["lick"])
-    with pytest.raises(NotImplementedError, match="03c"):
-        compute_stats(gengar1)
 
 
 @pytest.mark.parametrize(
@@ -366,7 +364,7 @@ def power_of(attacker, move, defender, field=None, attacker_conditions=None):
     context = build_context(
         attacker, defender, DEX4.move(move), field or FieldState(), attacker_conditions or {}, {}
     )
-    return base_power(context)
+    return resolve_power(context, POWER_RULES)
 
 
 def test_gyro_ball_follows_the_simulator_and_adds_one():
@@ -520,9 +518,10 @@ def test_build_report_returns_an_error_result_instead_of_raising():
     assert "known_set" in result.error
 
 
-def test_generation_without_an_engine_is_reported():
-    with pytest.raises(NotImplementedError, match="Gen 3"):
-        engine_for(3)
+def test_every_supported_generation_has_an_engine():
+    assert [engine_for(gen).gen for gen in Generation] == list(Generation)
+    with pytest.raises(ValueError):
+        engine_for(5)
 
 
 # --------------------------------------------------------------------------- latency

@@ -2,10 +2,11 @@
 
 from collections.abc import Mapping
 from functools import lru_cache
+from math import ceil, sqrt
 from types import MappingProxyType
 
 from poketrix.dex import load_natures
-from poketrix.schemas import BattlePokemon, PokemonSet, Stat, rules_for
+from poketrix.schemas import BattlePokemon, PokemonSet, Stat, gen1_2_hp_dv, rules_for
 
 _STATS = tuple(Stat)
 _DEFAULT_IV = 31
@@ -14,13 +15,19 @@ _DEFAULT_EV = 0
 
 def compute_stats(pokemon_set: PokemonSet) -> Mapping[Stat, int]:
     """Actual stats of a set at its level, before stat stages. Cached; treat as read-only."""
-    gen = pokemon_set.generation
-    if not rules_for(gen).has_natures:
-        raise NotImplementedError(f"Gen {int(gen)} stats (DVs / Stat Exp) arrive with Task 03c")
-    base = pokemon_set.species.base_stats
+    rules = rules_for(pokemon_set.generation)
+    stats = pokemon_set.species.base_stats
+    base = (stats.hp, stats.atk, stats.def_, stats.spa, stats.spd, stats.spe)
     spread = pokemon_set.spread
+    if not rules.has_natures:
+        dvs = {s: spread.ivs.get(s, rules.iv_max) for s in _STATS}
+        dvs[Stat.HP] = gen1_2_hp_dv(dvs, rules.iv_max)  # the HP DV is derived from the others
+        return _classic_stats(
+            base, pokemon_set.level, tuple(dvs[s] for s in _STATS),
+            tuple(spread.evs.get(s, rules.ev_max_per_stat) for s in _STATS),
+        )
     return _modern_stats(
-        (base.hp, base.atk, base.def_, base.spa, base.spd, base.spe),
+        base,
         pokemon_set.level,
         tuple(spread.ivs.get(s, _DEFAULT_IV) for s in _STATS),
         tuple(spread.evs.get(s, _DEFAULT_EV) for s in _STATS),
@@ -46,6 +53,19 @@ def _modern_stats(
     return MappingProxyType(stats)
 
 
+@lru_cache(maxsize=4096)
+def _classic_stats(
+    base: tuple[int, ...], level: int, dvs: tuple[int, ...], stat_exp: tuple[int, ...],
+) -> Mapping[Stat, int]:
+    """Gens 1-2: DVs (0-15) and Stat Exp (0-65535); a missing value counts as the maximum."""
+    stats: dict[Stat, int] = {}
+    for stat, b, dv, exp in zip(_STATS, base, dvs, stat_exp):
+        exp_bonus = min(255, ceil(sqrt(exp))) // 4
+        core = ((b + dv) * 2 + exp_bonus) * level // 100
+        stats[stat] = core + level + 10 if stat is Stat.HP else core + 5
+    return MappingProxyType(stats)
+
+
 def _nature_effect(nature_id: str | None) -> tuple[Stat | None, Stat | None]:
     if nature_id is None:
         return None, None
@@ -61,6 +81,19 @@ def apply_stage(stat: int, stage: int) -> int:
     if stage >= 0:
         return stat * (2 + stage) // 2
     return stat * 2 // (2 - stage)
+
+
+_CLASSIC_BOOST = (1, 1.5, 2, 2.5, 3, 3.5, 4)
+_CLASSIC_DROP_PERCENT = (100, 66, 50, 40, 33, 28, 25)
+
+
+def apply_stage_classic(stat: int, stage: int) -> int:
+    """Gens 1-2 stat stage, kept between 1 and 999."""
+    if stage >= 0:
+        stat = int(stat * _CLASSIC_BOOST[stage])
+    else:
+        stat = stat * _CLASSIC_DROP_PERCENT[-stage] // 100
+    return min(999, max(1, stat))
 
 
 def battle_stats(pokemon: BattlePokemon) -> Mapping[Stat, int]:

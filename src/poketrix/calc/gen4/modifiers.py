@@ -6,8 +6,8 @@ each other (`elif`), are the oracle's; changing them changes results by a point 
 
 from poketrix.schemas import BoostStat, PokemonType, SideCondition, Stat, Status, Weather
 
+from ..context import Context
 from ..stats import apply_stage
-from .context import Context
 
 _SOUL_DEW_USERS = frozenset({"latios", "latias"})
 _HALVES_DEFENSE = frozenset({"explosion", "selfdestruct"})

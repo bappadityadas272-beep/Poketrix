@@ -25,6 +25,7 @@ class DamageResult:
     type_multiplier: float
     crit_chance: float
     hit_distribution: Mapping[int, float] | None = None  # multi-hit moves: hits per use -> odds
+    hits_share_roll: bool = False  # Gen 1: every hit of a use repeats the first hit's damage
 
 
 @dataclass(frozen=True)

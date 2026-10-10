@@ -36,6 +36,8 @@ class DamageRange(Strict):
     type_multiplier: float = Field(ge=0.0, le=4.0)
     # Multi-hit moves only: number of hits per use -> probability. `rolls` are for one hit.
     hit_distribution: dict[int, float] | None = None
+    # Gen 1 multi-hit moves: every hit of one use repeats the first hit's roll and crit.
+    hits_share_roll: bool = False
 
     @model_validator(mode="after")
     def _shape(self) -> Self:
@@ -56,6 +58,8 @@ class DamageRange(Strict):
             total = math.fsum(self.hit_distribution.values())
             if abs(total - 1.0) > PROB_TOL or min(self.hit_distribution.values()) < 0:
                 raise ValueError(f"hit_distribution probabilities sum to {total:.6f}, not 1")
+        elif self.hits_share_roll:
+            raise ValueError("hits_share_roll only applies to a multi-hit move")
         return self
 
     @property

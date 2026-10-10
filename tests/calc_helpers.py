@@ -15,7 +15,7 @@ def battler(
     sp = gen_dex.species(species)
     known_set = PokemonSet(
         species=sp, level=level, moves=list(moves), nature=nature, item=item,
-        ability=ability or sp.possible_abilities[0],
+        ability=ability or (sp.possible_abilities[0] if sp.possible_abilities else None),
         spread=StatSpread(ivs=ivs or {}, evs=evs or {}),
     )
     max_hp = compute_stats(known_set)[Stat.HP]

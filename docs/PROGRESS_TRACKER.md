@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design proposal first)
+Last updated: 2026-10-10 (Task 03c built on `task/03c-gens-3-2-1`, awaiting review)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design propo
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) and 03b (items, abilities) done, merged; 03c (Gens 3 → 1) next | `cp-03a`, `cp-03b` |
+| 3 | Math layer (type chart, stats, damage, KO odds) | Gen 4 done, merged; 03c (Gens 3, 2, 1) built, **awaiting review** | `cp-03a`, `cp-03b`; `cp-03c` pending |
 | 4 | Bayesian set uncloaker | Not started | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 352 passing. `ruff check src tests` is clean.
+Tests: 352 passing on `main`; 678 on `task/03c-gens-3-2-1`. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -646,6 +646,102 @@ multi-hit move into a resist berry that would activate.
 - Exact KO odds still assume nothing else changes HP between hits.
 
 Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design proposal.
+
+## Task 03c — Gens 3, 2 and 1 damage engines (built 2026-10-10, awaiting review)
+
+Branch `task/03c-gens-3-2-1`. Not merged, not tagged, not pushed.
+Tests: **678 passing** (352 before + 326 new); `ruff check src tests` is clean.
+
+### Decisions (2026-10-10, user)
+
+| # | Question | Decision |
+|---|----------|----------|
+| C1 | Checkpointing | All three generations on one branch, one review |
+| C2 | Reference where the oracle and the simulator differ | Oracle for damage rolls (every case machine-verified); simulator for accuracy, crit rate and hit counts; every difference found is listed below |
+| C3 | Gen 1 multi-hit moves (every hit repeats the first hit's roll and crit) | Model it now |
+| C4 | Fixture size | About 60 hand-picked + 200 random per generation |
+
+### Result against the oracle
+
+| Gen | Hand-picked | Random compared | Random skipped (reported unsupported) | 4-move × 6-target report |
+|-----|-------------|-----------------|---------------------------------------|--------------------------|
+| 1 | 65 of 65 | 200 of 200 | — | about 4.2 ms |
+| 2 | 80 of 80 | 194 of 200 | Magnitude ×3, Present ×2, Triple Kick | about 3.9 ms |
+| 3 | 118 of 118 | 196 of 200 | Triple Kick ×2, Present, Spit Up | about 2.8 ms |
+| 4 | 185 of 186 | 293 of 300 | as in 03b, regenerated with a new random sequence | about 3.0 ms |
+
+- Every compared case matches the oracle's stats and all normal and critical rolls **exactly**
+  (39 rolls per list in Gens 1–2, 16 in Gens 3–4).
+- All three new engines matched on their first full run; no formula change was needed.
+- The fixtures total 1.4 MB (Gen 1: 284 KB, Gen 2: 300 KB, Gen 3: 312 KB, Gen 4: 476 KB).
+
+### What was built
+
+- **Shared code moved out of the Gen 4 package**, so no generation imports another:
+  - `calc/base.py` — `BaseEngine.evaluate` (context, hit chance, damage or unsupported reason).
+  - `calc/context.py` — `Side` / `Context`, now for every generation.
+  - `calc/power_rules.py` — reusable per-move power rules and the unsupported-move list.
+  - `calc/modern/` — what Gens 3 and 4 share: `engine.py` (immunities, fixed damage, multi-hit),
+    `movetype.py`, `speed.py`, `chance.py`.
+- **`calc/gen3/`** — `engine.py` and `modifiers.py`: the Gen 3 formula (items and abilities change
+  the stat itself, type items give 10%, Sea Incense 5%, category follows the type).
+- **`calc/classic/`** — `engine.py` with `ClassicEngine` and its `Gen1Engine` / `Gen2Engine`
+  subclasses, and `chance.py`. One formula; each subclass fills in what differs (critical hits,
+  type-factor rounding, the random roll, items and weather from Gen 2).
+- **Stats:** the Gens 1–2 formula (DVs, Stat Exp, derived HP DV) and their stat-stage table.
+- **Hidden Power** from DVs (Gen 2).
+- **KO odds:** `hits_share_roll` for Gen 1 multi-hit moves; `DamageRange.hits_share_roll` carries it.
+- **Generator:** `scripts/build_calc_golden.mjs` now builds all four fixtures; the hand-picked
+  cases live in `scripts/golden_cases/gen{1..4}.mjs`. It rejects a case whose species, ability,
+  item or move does not exist in that generation.
+- **Tests:** `test_calc_golden.py` covers all generations; `test_calc_gens123.py` holds the
+  stat, Hidden Power, accuracy, crit-rate and shared-roll tests.
+
+### Accuracy, crit rate and hit counts (from the simulator's per-generation source)
+
+- **Gen 1:** accuracy on a 0–255 scale against a random byte, so a 100% move hits 255/256; the
+  stage table is the stat-stage table. Crit rate from base Speed (Tauros 55/256); high-crit moves
+  ×8, capped at 255/256; Focus Energy lowers it (the Gen 1 bug). OHKO moves fail against a faster
+  target. Multi-hit: 2–5 hits at 3/8, 3/8, 1/8, 1/8, all repeating one roll.
+- **Gen 2:** same 0–255 scale, but 255 always hits; its own stage tables; BrightPowder subtracts
+  20; OHKO accuracy grows by 2 per level of difference. Crit stages 17, 32, 64, 85, 128 out of
+  256; Scope Lens and Focus Energy add one; Stick and Lucky Punch set stage 3; Flail and Reversal
+  never crit.
+- **Gen 3:** the Gen 4 rules, except Lax Incense is ×0.95.
+
+### Differences between the oracle and the simulator that I found
+
+Per decision C2 the damage rolls follow the oracle in each of these:
+
+1. **Gen 1 high-crit moves.** The oracle always treats Slash, Razor Leaf, Crabhammer and Karate
+   Chop as critical hits. We return both the normal and the critical rolls and use the
+   simulator's crit rate, so only the critical rolls are compared for these four moves.
+2. **Gen 1 Explosion and Self-Destruct.** The oracle halves Defense before the byte reduction
+   (divide by 4 when a stat exceeds 255); the simulator halves it after. The results can differ
+   by a point of Defense.
+3. **Gen 1 one-hit KO moves.** The simulator deals 65535 damage; we report the target's
+   remaining HP. The oracle does not model them.
+4. **Gen 2 Present.** The oracle runs its glitched formula with a fixed power of 40; we report
+   it as unsupported (its power is random).
+
+I compared only the parts of the simulator I read for the odds rules; this is not a full audit.
+
+### Known limits
+
+- Unsupported in every generation it exists in: Counter, Mirror Coat, Bide, Psywave, Magnitude,
+  Present, Triple Kick, Beat Up, Spit Up, untyped Hidden Power without IVs/DVs.
+- Gen 1 Speed for the OHKO check is stages plus paralysis; the Gen 1 stat-reapplication glitches
+  are not modelled.
+- Gen 1 partial-trapping moves (Wrap, Bind) are evaluated as single hits.
+- Multi-turn power growth (Rollout, Fury Cutter) and Pursuit's doubling on a switch are not
+  modelled: the listed base power is used.
+- Gen 1 multi-hit KO odds use a longer roll list (up to 312 values), so those evaluations are
+  slower than the rest.
+- I planned three commits, one per generation; the shared test file and generator serve all
+  generations, so it is one commit.
+
+On approval: merge `--no-ff`, tag `cp-03c`, log it, push. That completes Phase 3 (Math layer).
+Next is Task 04, the Bayesian set uncloaker, starting with a design proposal.
 
 ## Standing rules
 
