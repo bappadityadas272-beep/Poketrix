@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-03a` merged; Task 03b built on `task/03b-items-abilities`, awaiting review (2026-10-10)
+## Current state — checkpoint `cp-03b` (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -53,7 +53,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-01 | `src/poketrix/schemas/` — gen-aware contracts, 35 passing tests |
 | cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
-| (cp-03b pending) | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
+| cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,

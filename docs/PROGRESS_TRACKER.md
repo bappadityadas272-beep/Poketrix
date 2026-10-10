@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03b built on `task/03b-items-abilities`, awaiting review)
+Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design proposal first)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03b built on `task/03b-items-abilities`, awaiting
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) done, merged; 03b (items, abilities) built, **awaiting review**; 03c (Gens 3 → 1) after | `cp-03a` |
+| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) and 03b (items, abilities) done, merged; 03c (Gens 3 → 1) next | `cp-03a`, `cp-03b` |
 | 4 | Bayesian set uncloaker | Not started | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 231 passing on `main`; 352 on `task/03b-items-abilities`. `ruff check src tests` is clean.
+Tests: 352 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -548,9 +548,9 @@ B1–B9: the user chose every recommendation (item schema and data, species weig
 hit distribution, Payback by Speed, Metronome as first use, the unsupported list, accuracy
 modifiers included, 03a sweep replaced).
 
-## Task 03b — Gen 4 items, abilities and remaining moves (built 2026-10-10, awaiting review)
+## Task 03b — Gen 4 items, abilities and remaining moves (approved 2026-10-10)
 
-Branch `task/03b-items-abilities`. Not merged, not tagged, not pushed.
+Branch `task/03b-items-abilities`, merged into `main` as `cp-03b`.
 Tests: **352 passing** (231 before + 121 new); `ruff check src tests` is clean.
 
 ### Result against the oracle
@@ -645,8 +645,7 @@ multi-hit move into a resist berry that would activate.
 - Future Sight and Doom Desire are given the normal crit chance.
 - Exact KO odds still assume nothing else changes HP between hits.
 
-On approval: merge `--no-ff`, tag `cp-03b`, log it, push. Next is Task 03c (Gens 3 → 2 → 1
-engines), which starts with a design proposal.
+Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design proposal.
 
 ## Standing rules
 
