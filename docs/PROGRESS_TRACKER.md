@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03c approved; orders 3–4 issued: close Phase 3, propose Task 04)
+Last updated: 2026-10-10 (Phase 3 complete, merged as cp-03c; Task 04 design proposal next)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03c approved; orders 3–4 issued: close Phase 3,
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | Gen 4 merged; 03c (Gens 3, 2, 1) **approved**, merge + tag pending (Order 3) | `cp-03a`, `cp-03b`, `cp-03c` |
+| 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | Next: design proposal (Order 4) | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 352 passing on `main`; 678 on `task/03c-gens-3-2-1`. `ruff check src tests` is clean.
+Tests: 679 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -649,8 +649,8 @@ Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design propos
 
 ## Task 03c — Gens 3, 2 and 1 damage engines (approved 2026-10-10)
 
-Branch `task/03c-gens-3-2-1`. Not merged, not tagged, not pushed.
-Tests: **678 passing** (352 before + 326 new); `ruff check src tests` is clean.
+Branch `task/03c-gens-3-2-1`, merged into `main` as `cp-03c`.
+Tests: **678 passing** at review (352 before + 326 new), 679 after Order 3; `ruff check src tests` is clean.
 
 ### Decisions (2026-10-10, user)
 
@@ -668,12 +668,35 @@ Tests: **678 passing** (352 before + 326 new); `ruff check src tests` is clean.
 | 1 | 65 of 65 | 200 of 200 | — | about 4.2 ms |
 | 2 | 80 of 80 | 194 of 200 | Magnitude ×3, Present ×2, Triple Kick | about 3.9 ms |
 | 3 | 118 of 118 | 196 of 200 | Triple Kick ×2, Present, Spit Up | about 2.8 ms |
-| 4 | 185 of 186 | 293 of 300 | as in 03b, regenerated with a new random sequence | about 3.0 ms |
+| 4 | 185 of 186 | 293 of 300 | Magnitude ×2, Trump Card ×2, Triple Kick, Spit Up, one Rivalry attacker (listed below) | about 3.0 ms |
 
 - Every compared case matches the oracle's stats and all normal and critical rolls **exactly**
   (39 rolls per list in Gens 1–2, 16 in Gens 3–4).
 - All three new engines matched on their first full run; no formula change was needed.
 - The fixtures total 1.4 MB (Gen 1: 284 KB, Gen 2: 300 KB, Gen 3: 312 KB, Gen 4: 476 KB).
+
+**Fixture log** (R2). All four were generated with `@smogon/calc` 0.12.0 and `@pkmn/dex` 0.10.11.
+A regeneration that changes any of these numbers is a deliberate change and must be logged here.
+
+| Gen | Sweep seed | Hand-picked | Sweep | Sweep cases compared |
+|-----|------------|-------------|-------|----------------------|
+| 1 | 20261015 | 65 | 200 | 200 |
+| 2 | 20261014 | 80 | 200 | 194 |
+| 3 | 20261013 | 118 | 200 | 196 |
+| 4 | 20261011 | 186 | 300 | 293 |
+
+The Gen 4 sweep went from 295 compared (03b) to 293 because the generator was generalised to
+all generations, which changed its random sequence; the seed is the same. Its 7 skipped cases:
+
+| Case | Attacker | Move | Why it is reported unsupported |
+|------|----------|------|--------------------------------|
+| sweep-035 | Wormadam | Magnitude | seven possible powers do not fit one roll list |
+| sweep-045 | Buizel | Magnitude | same |
+| sweep-073 | Carnivine | Trump Card | power depends on remaining PP, which is not tracked |
+| sweep-074 | Aggron | Trump Card | same |
+| sweep-110 | Suicune | Triple Kick | each hit has its own power and accuracy check |
+| sweep-263 | Granbull | Spit Up | power depends on the Stockpile count, which is not tracked |
+| sweep-289 | Nidoran-M (Rivalry) | Energy Ball | Rivalry depends on gender, which is not tracked |
 
 ### What was built
 
@@ -716,9 +739,13 @@ Per decision C2 the damage rolls follow the oracle in each of these:
 1. **Gen 1 high-crit moves.** The oracle always treats Slash, Razor Leaf, Crabhammer and Karate
    Chop as critical hits. We return both the normal and the critical rolls and use the
    simulator's crit rate, so only the critical rolls are compared for these four moves.
-2. **Gen 1 Explosion and Self-Destruct.** The oracle halves Defense before the byte reduction
-   (divide by 4 when a stat exceeds 255); the simulator halves it after. The results can differ
-   by a point of Defense.
+2. **Gen 1 Explosion and Self-Destruct.** The oracle halves Defense before it checks whether a
+   stat exceeds 255 (which divides both stats by 4); the simulator checks first and halves
+   after. When Attack is at most 255 and Defense is between 256 and 511, only the simulator
+   divides by 4, and the coarser rounding changes the result by a few HP: Gengar's Explosion
+   into Golem is 77–91 with the oracle's order and would top out at 93 with the simulator's.
+   (Corrected during Order 3: I first described this as "a point of Defense".) Pinned by
+   `test_gen1_explosion_halves_defense_before_the_byte_check`.
 3. **Gen 1 one-hit KO moves.** The simulator deals 65535 damage; we report the target's
    remaining HP. The oracle does not model them.
 4. **Gen 2 Present.** The oracle runs its glitched formula with a fixed power of 40; we report

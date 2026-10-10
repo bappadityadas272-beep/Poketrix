@@ -225,6 +225,25 @@ def test_shared_roll_flag_needs_a_multi_hit_move():
         DamageRange(**base, hits_share_roll=True)
 
 
+# --------------------------------------------------------------------------- Gen 1 Explosion
+
+
+def test_gen1_explosion_halves_defense_before_the_byte_check():
+    """Pins a deliberate choice: do not "fix" this to the simulator's order.
+
+    The oracle (@smogon/calc), which is our reference for damage rolls, halves the target's
+    Defense for Explosion and only then checks whether a stat exceeds 255 (dividing both by 4).
+    The Showdown simulator checks first and halves afterwards. With Attack <= 255 and Defense in
+    256..511 only the simulator divides by 4, and its coarser rounding gives a different result.
+
+    Gengar (Attack 228) into Golem (Defense 358), Explosion (power 170), Normal into Rock/Ground:
+      oracle order:    42 x 228 x 170 // 179 // 50 = 181, + 2 = 183, x 0.5 = 91  -> rolls 77..91
+      simulator order: 42 x  57 x 170 //  44 // 50 = 184, + 2 = 186, x 0.5 = 93
+    """
+    result = evaluate(1, mon(1, "gengar"), "explosion", mon(1, "golem"))
+    assert (result.damage.rolls[0], result.damage.rolls[-1]) == (77, 91)
+
+
 # --------------------------------------------------------------------------- Gen 2 odds
 
 

@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-03b` merged; Task 03c built on `task/03c-gens-3-2-1`, awaiting review (2026-10-10)
+## Current state — checkpoint `cp-03c`: Phase 3 (Math layer) complete (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -54,7 +54,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 | cp-03a | `src/poketrix/calc/` — Gen 4 damage core, exact KO odds, 231 tests total |
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
-| (cp-03c pending) | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 678 tests total |
+| cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -107,6 +107,14 @@ Calc (`from poketrix.calc import ...`), all four generations:
   `slowstart`, `unburden`, `charge`, `focusenergy`, `foresight`, `confusion`.
 - Type chart and natures come from the snapshot: `poketrix.dex.load_type_chart(gen)`,
   `load_natures()`.
+
+Carried forward (from the 03c review):
+- A move the calculator reports as unsupported (Counter, Bide, Present, …) must reach the user
+  as "unsupported", through a `SubsystemResult` with status `fallback` or `error`. Later
+  phases must never turn it into zero damage. Applies to Phase 6 (orchestrator).
+- Gens 1–2 reports run near the 5 ms target. Optimise only if the Phase 6 end-to-end
+  measurement shows the calculator is the bottleneck.
+- Text files are LF on every platform (`.gitattributes`).
 
 Known, deliberate gaps:
 - `BattlePokemon.volatiles` is a free-form id set. Tighten it once the Showdown parser shows the
