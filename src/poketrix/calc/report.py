@@ -46,12 +46,14 @@ def evaluate_move(
         crit_rolls=None if result.crit_rolls is None else list(result.crit_rolls),
         defender_max_hp=outcome.defender_max_hp, type_multiplier=result.type_multiplier,
         hit_distribution=None if result.hit_distribution is None else dict(result.hit_distribution),
+        hits_share_roll=result.hits_share_roll,
     )
     ko = []
     if outcome.defender_hp:
         ko = ko_chances(
             result.rolls, result.crit_rolls, result.crit_chance, outcome.hit_chance,
             outcome.defender_hp, hit_distribution=result.hit_distribution,
+            hits_share_roll=result.hits_share_roll,
         )
     return MoveEvaluation(move_id=move.id, damage=damage, ko=ko, accuracy=outcome.hit_chance)
 

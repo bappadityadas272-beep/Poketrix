@@ -1,7 +1,8 @@
-"""Everything the Gen 4 rules look at, resolved once per calculation."""
+"""Everything a damage engine looks at, resolved once per calculation (all generations)."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cache
 
 from poketrix.dex import Dex
 from poketrix.schemas import (
@@ -19,12 +20,12 @@ from poketrix.schemas import (
     Weather,
 )
 
-from ..engine import SideConditions
-from ..stats import battle_stats, current_hp
+from .engine import SideConditions
+from .stats import battle_stats, current_hp
 
-_DEX = Dex(Generation.DPP)
+_dex = cache(Dex)
 
-# Defender abilities that Mold Breaker switches off (the oracle's list).
+# Defender abilities that Mold Breaker (Gen 4) switches off (the oracle's list).
 MOLD_BREAKER_IGNORES = frozenset({
     "battlearmor", "clearbody", "damp", "dryskin", "filter", "flashfire", "flowergift",
     "heatproof", "hypercutter", "immunity", "innerfocus", "insomnia", "keeneye", "leafguard",
@@ -85,17 +86,15 @@ class Side:
 
 @dataclass(frozen=True)
 class Context:
+    gen: Generation
     attacker: Side
     defender: Side
     move: Move
+    physical: bool  # a field, not derived: before Gen 4 it follows the move's effective type
     field: FieldState
     weather: Weather  # NONE when Air Lock or Cloud Nine is on the field
     attacker_conditions: SideConditions
     defender_conditions: SideConditions
-
-    @property
-    def physical(self) -> bool:
-        return self.move.category is MoveCategory.PHYSICAL
 
     @property
     def gravity(self) -> bool:
@@ -122,7 +121,7 @@ def _held_item(pokemon: BattlePokemon) -> Item | None:
     item_id = pokemon.revealed_item
     if pokemon.known_set is not None and pokemon.known_set.item is not None:
         item_id = pokemon.known_set.item
-    return None if item_id is None else _DEX.item(item_id)
+    return None if item_id is None else _dex(pokemon.generation).item(item_id)
 
 
 def _side(pokemon: BattlePokemon, ability_ignored: bool) -> Side:
@@ -144,6 +143,7 @@ def build_context(
     mold_breaker = attacker_ability == "moldbreaker" and defender_ability in MOLD_BREAKER_IGNORES
     negated = not _WEATHER_NEGATORS.isdisjoint((attacker_ability, defender_ability))
     return Context(
+        gen=attacker.generation, physical=move.category is MoveCategory.PHYSICAL,
         attacker=_side(attacker, ability_ignored=False),
         defender=_side(defender, ability_ignored=mold_breaker),
         move=move, field=field, weather=Weather.NONE if negated else field.weather,

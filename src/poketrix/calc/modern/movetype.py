@@ -1,10 +1,14 @@
-"""The move's effective type, its effectiveness, and the abilities that negate it outright."""
+"""Gens 3-4: the move's effective type, its effectiveness, and the abilities that negate it.
 
-from poketrix.schemas import Generation, MoveFlag, PokemonType, Weather
+Rules for things a generation lacks (Gravity, Scrappy, Iron Ball in Gen 3) never trigger there,
+because the dex of that generation has no such ability, item or field state.
+"""
 
-from ..hidden_power import hidden_power
+from poketrix.schemas import MoveFlag, PokemonType, Weather
+
+from ..context import Context
+from ..power_rules import derived_hidden_power, derives_hidden_power
 from ..typechart import in_type_order, type_factor
-from .context import Context
 
 _ABSORBS = {  # defender ability -> move type it makes do nothing
     "flashfire": PokemonType.FIRE,
@@ -21,16 +25,6 @@ _WEATHER_BALL_TYPE = {
     Weather.SANDSTORM: PokemonType.ROCK,
     Weather.HAIL: PokemonType.ICE,
 }
-
-
-def derives_hidden_power(c: Context) -> bool:
-    """Listed IVs decide Hidden Power; without them a typed Hidden Power is taken as given."""
-    ivs = c.attacker.pokemon.known_set.spread.ivs
-    return c.move.id.startswith("hiddenpower") and bool(ivs)
-
-
-def derived_hidden_power(c: Context) -> tuple[PokemonType, int]:
-    return hidden_power(Generation.DPP, c.attacker.pokemon.known_set.spread.ivs)
 
 
 def move_type(c: Context) -> PokemonType:
@@ -56,7 +50,7 @@ def type_factors(c: Context, attacking: PokemonType) -> list[float]:
     ghost_revealed = c.attacker.ability == "scrappy" or foreseen
     factors = []
     for defending in in_type_order(c.defender.types):
-        factor = type_factor(Generation.DPP, attacking, defending)
+        factor = type_factor(c.gen, attacking, defending)
         if (
             ghost_revealed and defending is PokemonType.GHOST
             and attacking in (PokemonType.NORMAL, PokemonType.FIGHTING)

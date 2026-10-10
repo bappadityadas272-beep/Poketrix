@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design proposal first)
+Last updated: 2026-10-10 (Phase 3 complete, merged as cp-03c; Task 04 design proposal next)
 
 ## Status at a glance
 
@@ -9,14 +9,14 @@ Last updated: 2026-10-10 (Task 03b merged as cp-03b; Task 03c next, design propo
 | 0 | Repo scaffold + checkpoint workflow | Done, merged | `cp-00` |
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
-| 3 | Math layer (type chart, stats, damage, KO odds) | 03a (Gen 4 core) and 03b (items, abilities) done, merged; 03c (Gens 3 → 1) next | `cp-03a`, `cp-03b` |
-| 4 | Bayesian set uncloaker | Not started | |
+| 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
+| 4 | Bayesian set uncloaker | Next: design proposal (Order 4) | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 352 passing. `ruff check src tests` is clean.
+Tests: 679 passing. `ruff check src tests` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -646,6 +646,228 @@ multi-hit move into a resist berry that would activate.
 - Exact KO odds still assume nothing else changes HP between hits.
 
 Next is Task 03c (Gens 3 → 2 → 1 engines), which starts with a design proposal.
+
+## Task 03c — Gens 3, 2 and 1 damage engines (approved 2026-10-10)
+
+Branch `task/03c-gens-3-2-1`, merged into `main` as `cp-03c`.
+Tests: **678 passing** at review (352 before + 326 new), 679 after Order 3; `ruff check src tests` is clean.
+
+### Decisions (2026-10-10, user)
+
+| # | Question | Decision |
+|---|----------|----------|
+| C1 | Checkpointing | All three generations on one branch, one review |
+| C2 | Reference where the oracle and the simulator differ | Oracle for damage rolls (every case machine-verified); simulator for accuracy, crit rate and hit counts; every difference found is listed below |
+| C3 | Gen 1 multi-hit moves (every hit repeats the first hit's roll and crit) | Model it now |
+| C4 | Fixture size | About 60 hand-picked + 200 random per generation |
+
+### Result against the oracle
+
+| Gen | Hand-picked | Random compared | Random skipped (reported unsupported) | 4-move × 6-target report |
+|-----|-------------|-----------------|---------------------------------------|--------------------------|
+| 1 | 65 of 65 | 200 of 200 | — | about 4.2 ms |
+| 2 | 80 of 80 | 194 of 200 | Magnitude ×3, Present ×2, Triple Kick | about 3.9 ms |
+| 3 | 118 of 118 | 196 of 200 | Triple Kick ×2, Present, Spit Up | about 2.8 ms |
+| 4 | 185 of 186 | 293 of 300 | Magnitude ×2, Trump Card ×2, Triple Kick, Spit Up, one Rivalry attacker (listed below) | about 3.0 ms |
+
+- Every compared case matches the oracle's stats and all normal and critical rolls **exactly**
+  (39 rolls per list in Gens 1–2, 16 in Gens 3–4).
+- All three new engines matched on their first full run; no formula change was needed.
+- The fixtures total 1.4 MB (Gen 1: 284 KB, Gen 2: 300 KB, Gen 3: 312 KB, Gen 4: 476 KB).
+
+**Fixture log** (R2). All four were generated with `@smogon/calc` 0.12.0 and `@pkmn/dex` 0.10.11.
+A regeneration that changes any of these numbers is a deliberate change and must be logged here.
+
+| Gen | Sweep seed | Hand-picked | Sweep | Sweep cases compared |
+|-----|------------|-------------|-------|----------------------|
+| 1 | 20261015 | 65 | 200 | 200 |
+| 2 | 20261014 | 80 | 200 | 194 |
+| 3 | 20261013 | 118 | 200 | 196 |
+| 4 | 20261011 | 186 | 300 | 293 |
+
+The Gen 4 sweep went from 295 compared (03b) to 293 because the generator was generalised to
+all generations, which changed its random sequence; the seed is the same. Its 7 skipped cases:
+
+| Case | Attacker | Move | Why it is reported unsupported |
+|------|----------|------|--------------------------------|
+| sweep-035 | Wormadam | Magnitude | seven possible powers do not fit one roll list |
+| sweep-045 | Buizel | Magnitude | same |
+| sweep-073 | Carnivine | Trump Card | power depends on remaining PP, which is not tracked |
+| sweep-074 | Aggron | Trump Card | same |
+| sweep-110 | Suicune | Triple Kick | each hit has its own power and accuracy check |
+| sweep-263 | Granbull | Spit Up | power depends on the Stockpile count, which is not tracked |
+| sweep-289 | Nidoran-M (Rivalry) | Energy Ball | Rivalry depends on gender, which is not tracked |
+
+### What was built
+
+- **Shared code moved out of the Gen 4 package**, so no generation imports another:
+  - `calc/base.py` — `BaseEngine.evaluate` (context, hit chance, damage or unsupported reason).
+  - `calc/context.py` — `Side` / `Context`, now for every generation.
+  - `calc/power_rules.py` — reusable per-move power rules and the unsupported-move list.
+  - `calc/modern/` — what Gens 3 and 4 share: `engine.py` (immunities, fixed damage, multi-hit),
+    `movetype.py`, `speed.py`, `chance.py`.
+- **`calc/gen3/`** — `engine.py` and `modifiers.py`: the Gen 3 formula (items and abilities change
+  the stat itself, type items give 10%, Sea Incense 5%, category follows the type).
+- **`calc/classic/`** — `engine.py` with `ClassicEngine` and its `Gen1Engine` / `Gen2Engine`
+  subclasses, and `chance.py`. One formula; each subclass fills in what differs (critical hits,
+  type-factor rounding, the random roll, items and weather from Gen 2).
+- **Stats:** the Gens 1–2 formula (DVs, Stat Exp, derived HP DV) and their stat-stage table.
+- **Hidden Power** from DVs (Gen 2).
+- **KO odds:** `hits_share_roll` for Gen 1 multi-hit moves; `DamageRange.hits_share_roll` carries it.
+- **Generator:** `scripts/build_calc_golden.mjs` now builds all four fixtures; the hand-picked
+  cases live in `scripts/golden_cases/gen{1..4}.mjs`. It rejects a case whose species, ability,
+  item or move does not exist in that generation.
+- **Tests:** `test_calc_golden.py` covers all generations; `test_calc_gens123.py` holds the
+  stat, Hidden Power, accuracy, crit-rate and shared-roll tests.
+
+### Accuracy, crit rate and hit counts (from the simulator's per-generation source)
+
+- **Gen 1:** accuracy on a 0–255 scale against a random byte, so a 100% move hits 255/256; the
+  stage table is the stat-stage table. Crit rate from base Speed (Tauros 55/256); high-crit moves
+  ×8, capped at 255/256; Focus Energy lowers it (the Gen 1 bug). OHKO moves fail against a faster
+  target. Multi-hit: 2–5 hits at 3/8, 3/8, 1/8, 1/8, all repeating one roll.
+- **Gen 2:** same 0–255 scale, but 255 always hits; its own stage tables; BrightPowder subtracts
+  20; OHKO accuracy grows by 2 per level of difference. Crit stages 17, 32, 64, 85, 128 out of
+  256; Scope Lens and Focus Energy add one; Stick and Lucky Punch set stage 3; Flail and Reversal
+  never crit.
+- **Gen 3:** the Gen 4 rules, except Lax Incense is ×0.95.
+
+### Differences between the oracle and the simulator that I found
+
+Per decision C2 the damage rolls follow the oracle in each of these:
+
+1. **Gen 1 high-crit moves.** The oracle always treats Slash, Razor Leaf, Crabhammer and Karate
+   Chop as critical hits. We return both the normal and the critical rolls and use the
+   simulator's crit rate, so only the critical rolls are compared for these four moves.
+2. **Gen 1 Explosion and Self-Destruct.** The oracle halves Defense before it checks whether a
+   stat exceeds 255 (which divides both stats by 4); the simulator checks first and halves
+   after. When Attack is at most 255 and Defense is between 256 and 511, only the simulator
+   divides by 4, and the coarser rounding changes the result by a few HP: Gengar's Explosion
+   into Golem is 77–91 with the oracle's order and would top out at 93 with the simulator's.
+   (Corrected during Order 3: I first described this as "a point of Defense".) Pinned by
+   `test_gen1_explosion_halves_defense_before_the_byte_check`.
+3. **Gen 1 one-hit KO moves.** The simulator deals 65535 damage; we report the target's
+   remaining HP. The oracle does not model them.
+4. **Gen 2 Present.** The oracle runs its glitched formula with a fixed power of 40; we report
+   it as unsupported (its power is random).
+
+I compared only the parts of the simulator I read for the odds rules; this is not a full audit.
+
+### Known limits
+
+- Unsupported in every generation it exists in: Counter, Mirror Coat, Bide, Psywave, Magnitude,
+  Present, Triple Kick, Beat Up, Spit Up, untyped Hidden Power without IVs/DVs.
+- Gen 1 Speed for the OHKO check is stages plus paralysis; the Gen 1 stat-reapplication glitches
+  are not modelled.
+- Gen 1 partial-trapping moves (Wrap, Bind) are evaluated as single hits.
+- Multi-turn power growth (Rollout, Fury Cutter) and Pursuit's doubling on a switch are not
+  modelled: the listed base power is used.
+- Gen 1 multi-hit KO odds use a longer roll list (up to 312 values), so those evaluations are
+  slower than the rest.
+- I planned three commits, one per generation; the shared test file and generator serve all
+  generations, so it is one commit.
+
+On approval: merge `--no-ff`, tag `cp-03c`, log it, push. That completes Phase 3 (Math layer).
+Next is Task 04, the Bayesian set uncloaker, starting with a design proposal.
+
+## Review of Task 03c (2026-10-10, reviewer: Claude in claude.ai, on behalf of the user)
+
+Verdict: **APPROVED.** This completes Phase 3.
+
+I checked the following on the user's machine:
+
+- **Tests:** 678 of 678 pass on `task/03c-gens-3-2-1` (commit `df05740`).
+- **Gen 4, 185 of 186 hand-picked:** expected. The one case not compared is the multi-hit move into a resist berry,
+  which is tested to report *unsupported*, carried over from 03b.
+- **Gen 1–2 odds rules:** checked against known game behaviour.
+  - Gen 1: crit rate is base Speed ÷ 2 out of 256 (Tauros gets 55/256), high-crit moves get ×8 capped at 255, and the Focus Energy bug lowers the rate.
+  - Gen 1 multi-hit is 2/3/4/5 hits with chances 3/8, 3/8, 1/8, 1/8, and every hit reuses one roll.
+  - Gen 2 crit stages are 17, 32, 64, 85 and 128 out of 256.
+  - All correct.
+- **Divergence calls (1–4):** I agree with each. Using the simulator's crit rate for Gen 1 high-crit moves
+  is more correct than the oracle's "always crit". Reporting Present as unsupported, and OHKO
+  damage as the target's remaining HP, are both right for KO-probability purposes.
+- **Shared-module refactor:** Gen 4 behaviour is unchanged (its oracle cases still match), and no generation
+  imports another. Good structure.
+
+Findings. None block the merge, but R1 must be done before the merge commit (Order 3).
+
+- **R1: line endings.** Git on Windows checks files out with CRLF, so any non-Windows git (CI, the
+  reviewer's Linux shell, a future Mac) sees every file as modified: 26 files showed as changed with zero
+  real changes. Add a `.gitattributes` with `* text=auto eol=lf` and mark `*.json`, `*.py`, `*.md`
+  and `*.mjs` as `text eol=lf`. Then run `git add --renormalize .` and commit it on the task branch as
+  "chore: normalise line endings". Check that `pytest` is still green afterwards, because the fixtures are JSON.
+- **R2: fixture log.** The Gen 4 random sweep went from 295 of 300 (03b) to 293 of 300 cases compared, because the
+  generator code changed. Per-generation seeds already keep the generations independent, which is good. In the 03c result
+  table, replace "as in 03b" with the 7 skipped Gen 4 cases by name, and record each fixture's
+  seed and the `@smogon/calc` version in the tracker. A future regeneration then shows up as a deliberate change.
+- **R3: Gen 1 Explosion.** Add one test that pins our behaviour (the oracle's order) and names the
+  one-point simulator difference in its docstring, so nobody later "fixes" it by accident.
+- **R4: latency.** Gens 1–2 are near the 5 ms report target, and Gen 1 multi-hit KO odds are slower (up to
+  312 values). No action now. Phase 6 will measure the end-to-end turn against the 500 ms budget, and
+  if Gen 1 is the bottleneck we'll profile it then. This follows the "upgrade only when proven" rule.
+- **R5: callers of unsupported moves.** Later phases must treat the unsupported list (Counter, Bide, Present, …) as a
+  `SubsystemResult` with status `fallback` or `error`, and never as zero damage. Carry this forward to Phase 6.
+
+## Orders for Claude Code, batch 2 (do these in order, stopping where marked)
+
+### Order 3: close Task 03c and Phase 3 (no stop needed, the user has approved)
+1. On `task/03c-gens-3-2-1`, do R1 (line endings) as its own commit, then R2 and R3. Run `pytest` and
+   `ruff check src tests`; both must be green.
+2. Run `git switch main`, then `git merge --no-ff task/03c-gens-3-2-1`, then
+   `git tag -a cp-03c -m "Math layer: Gens 3, 2, 1 damage engines"`.
+3. Add cp-03c to `docs/CHECKPOINTS.md` with the test count, mark Phase 3 as done in this table and in
+   `README.md`, and push with `git push origin main --tags`.
+4. Report the push result in one line under this order.
+
+### Order 4: Task 04 design proposal, the Bayesian set uncloaker. **STOP after the proposal.**
+Branch: `task/04-bayes-uncloaker`. Write the proposal as a new section in this tracker. This is the first
+layer that is genuinely machine learning, so the proposal must show how we will **measure** it, not
+just how we will build it.
+
+The proposal must cover:
+
+1. **Where the prior comes from.** First read Showdown's Random Battle data for Gens 1–4 and report the
+   actual file layout. The current data may be *movepools plus generation rules* (roles, essential
+   and exclusive moves) rather than a list of finished sets with frequencies. If so, the true prior is
+   whatever the team generator produces. Compare these options and recommend one:
+   - **(a) Sample the official generator.** Run Showdown's own random-team generator (the
+     `pokemon-showdown` npm package, Node at build time only, the same pattern as `build_dex`) for N teams per
+     gen, and count the distinct (moves, item, ability) sets per species and level. This is the
+     empirical prior. Propose N, and show how much counts move between two seeds, to justify N.
+   - **(b) Parse the movepools** and derive set probabilities analytically. Exact if it works, but
+     it means re-implementing generator logic, so it's fragile.
+   - **(c) Smogon usage statistics** for the Gen 1–4 Random Battle formats, if they exist for these formats.
+   Record the source version and pin it, as was done for `@pkmn/dex` and `@smogon/calc`.
+2. **What a hypothesis is.** Is it a distinct (frozenset of moves, item, ability) tuple, and what about
+   the spread? In Random Battles the level, EVs and IVs are mostly fixed per species. Say so if the data confirms it.
+3. **Evidence and updates.** For 04a: revealed moves, item (including consumed or knocked off, such as Leftovers recovery
+   or a berry eaten) and ability. Bayes over the hypothesis table gives `SetPosterior`, with `move_probability`,
+   item and ability marginals. Also cover negative evidence: a Pokémon that has used 4 distinct moves has
+   revealed its whole moveset.
+   For 04b, a proposal only, built later: **damage-based evidence.** The likelihood of an observed damage %
+   under each hypothesis's stats and item, using our calc engines, for example telling Choice Band from Life Orb, or
+   detecting Life Orb recoil. Recommend whether 04b is part of Phase 4 or deferred.
+4. **Zero-probability safety.** Sampling can miss rare sets, so real evidence may contradict every
+   hypothesis. Propose the fallback, for example backing off to per-move marginals with smoothing, returned as
+   `SubsystemResult(status="fallback")`, never an exception. `SetPosterior`'s schema validator must
+   still hold.
+5. **Evaluation, the ML part.** Build a held-out test set by sampling *fresh* generator teams with a
+   different seed. Reveal k = 0..4 random moves (plus the item and ability where shown), and report:
+   - the share of cases where the true set keeps a non-zero posterior (target 100% on the main path);
+   - log-loss and Brier score of the posterior over sets, and of P(move) for the unrevealed moves;
+   - calibration: a reliability table of predicted P(move) against observed frequency, in 10 bins;
+   - top-1 and top-3 set accuracy as k grows.
+   Propose the targets, and commit the evaluation script so the numbers can be reproduced.
+6. **Consumer contract.** Show how the Math layer uses the posterior: a *threat report*, meaning the
+   expected and worst-case damage to our active Pokémon weighted by P(move), with no new calc code. Propose the function
+   signature only.
+7. **Size and speed.** The prior tables are committed per gen; give their size estimate and a cap of about 5 MB in
+   total. One posterior update must take under 5 ms per Pokémon (the ML budget is under 150 ms per turn).
+8. **Decisions to ask the user,** with a recommendation for each: the prior source, N, hypothesis
+   granularity, whether 04b is in Phase 4, and the evaluation targets.
+
+Then **stop** and ask the user to approve or adjust the proposal before writing any code.
 
 ## Standing rules
 

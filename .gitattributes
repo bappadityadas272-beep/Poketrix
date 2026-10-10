@@ -1,0 +1,7 @@
+# Store and check out text files with LF on every platform.
+* text=auto eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.docx binary
