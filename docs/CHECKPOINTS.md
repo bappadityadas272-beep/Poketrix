@@ -25,3 +25,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 |-------|----------------------------------------|------------|-------|
 | cp-00 | Repo scaffold + checkpoint workflow    | 2026-10-10 | n/a   |
 | cp-01 | Shared Pydantic schemas (gen 1-4 aware) | 2026-10-10 | 35 passed |
+| cp-02 | Dex data layer, Gens 1-4 (`@pkmn/dex` snapshot) | 2026-10-10 | 68 passed |

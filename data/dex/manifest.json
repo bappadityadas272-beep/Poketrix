@@ -1,0 +1,10 @@
+{
+  "source": "@pkmn/dex",
+  "version": "0.10.11",
+  "generations": [
+    1,
+    2,
+    3,
+    4
+  ]
+}
