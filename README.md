@@ -11,12 +11,13 @@ and an LLM that only ever *explains* already-computed numbers.
 | # | Phase | Status |
 |---|-------|--------|
 | 0 | Repo scaffold + checkpoint workflow | done |
-| 1 | Shared Pydantic schemas (gen-aware) | in progress |
-| 2 | Deterministic Math layer (type chart, stats, damage) — Gen 4 first, then 3 → 2 → 1 | |
-| 3 | Bayesian set uncloaker (Showdown Gen 1–4 Random Battle set pools as priors) | |
-| 4 | Showdown battle-log parser → `GameState` | |
-| 5 | Orchestrator (plain state machine first) + synthesis guardrails | |
-| 6 | XGBoost action predictor (needs replay data) | |
+| 1 | Shared Pydantic schemas (gen-aware) | done (cp-01) |
+| 2 | Dex data layer (Gens 1–4 species/moves snapshot) | next — see CLAUDE.md |
+| 3 | Deterministic Math layer (type chart, stats, damage) — Gen 4 first, then 3 → 2 → 1 | |
+| 4 | Bayesian set uncloaker (Showdown Gen 1–4 Random Battle set pools as priors) | |
+| 5 | Showdown battle-log parser → `GameState` | |
+| 6 | Orchestrator (plain state machine first) + synthesis guardrails | |
+| 7 | XGBoost action predictor (needs replay data) | |
 | — | Knowledge graph / RAG, vision ingestion | deferred |
 
 ## Setup
