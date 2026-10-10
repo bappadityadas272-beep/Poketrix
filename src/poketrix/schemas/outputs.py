@@ -1,0 +1,210 @@
+"""Output contracts for each subsystem, plus the synthesis-layer guardrail.
+
+Every subsystem returns `SubsystemResult[T]`, so the orchestrator can always tell
+"real answer" from "deterministic fallback" from "timed out" — rule 4 (graceful fallbacks).
+"""
+
+import math
+from typing import Generic, Literal, TypeVar
+
+from pydantic import BaseModel, Field, ValidationInfo, model_validator
+from typing_extensions import Self
+
+from .battle import GameState
+from .enums import ActionKind, Generation, SubsystemStatus
+from .generation import rules_for
+from .pokemon import ShowdownId, Strict
+
+PROB_TOL = 1e-6
+
+Probability = float  # documented alias; bounds enforced with Field(ge=0, le=1)
+
+
+# --------------------------------------------------------------------------- Math layer
+
+
+class DamageRange(Strict):
+    """Every possible damage roll for one move, attacker -> defender, no crit."""
+
+    generation: Generation
+    move_id: ShowdownId
+    attacker_species: ShowdownId
+    defender_species: ShowdownId
+    rolls: list[int] = Field(min_length=1)  # sorted ascending, absolute HP
+    crit_rolls: list[int] | None = None
+    defender_max_hp: int = Field(ge=1)
+    type_multiplier: float = Field(ge=0.0, le=4.0)
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        n = rules_for(self.generation).damage_roll_count
+        for name, rolls in (("rolls", self.rolls), ("crit_rolls", self.crit_rolls)):
+            if rolls is None:
+                continue
+            # Immune / fixed-damage moves legitimately collapse to a single value.
+            if len(rolls) not in (1, n):
+                raise ValueError(f"Gen {int(self.generation)} {name} must have 1 or {n} entries")
+            if rolls != sorted(rolls) or rolls[0] < 0:
+                raise ValueError(f"{name} must be non-negative and ascending")
+        if self.type_multiplier == 0 and any(self.rolls):
+            raise ValueError("immune matchup cannot deal damage")
+        return self
+
+    @property
+    def min_pct(self) -> float:
+        return 100 * self.rolls[0] / self.defender_max_hp
+
+    @property
+    def max_pct(self) -> float:
+        return 100 * self.rolls[-1] / self.defender_max_hp
+
+
+class KOChance(Strict):
+    hits: int = Field(ge=1, le=10)  # n-hit KO
+    probability: float = Field(ge=0.0, le=1.0)
+    method: Literal["exact", "monte_carlo"]
+    samples: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _samples(self) -> Self:
+        if (self.method == "monte_carlo") != (self.samples is not None):
+            raise ValueError("samples required for monte_carlo, forbidden for exact")
+        return self
+
+
+class MoveEvaluation(Strict):
+    move_id: ShowdownId
+    damage: DamageRange | None = None  # None for status moves
+    ko: list[KOChance] = Field(default_factory=list)
+    accuracy: float = Field(ge=0.0, le=1.0)
+
+
+class MathReport(Strict):
+    our_moves: list[MoveEvaluation] = Field(default_factory=list)
+    threats: list[MoveEvaluation] = Field(default_factory=list)  # opponent's likely moves vs us
+
+
+# --------------------------------------------------------------------------- ML layer
+
+
+class SetHypothesis(Strict):
+    set_id: str
+    moves: list[ShowdownId] = Field(min_length=1, max_length=4)
+    item: ShowdownId | None = None
+    ability: ShowdownId | None = None
+    prior: float = Field(ge=0.0, le=1.0)
+    posterior: float = Field(ge=0.0, le=1.0)
+
+
+class SetPosterior(Strict):
+    """Bayesian set uncloaker output for one opponent Pokémon."""
+
+    species_id: ShowdownId
+    evidence_moves: list[ShowdownId] = Field(default_factory=list)
+    evidence_item: ShowdownId | None = None
+    evidence_ability: ShowdownId | None = None
+    hypotheses: list[SetHypothesis] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _coherent(self) -> Self:
+        for field in ("prior", "posterior"):
+            total = math.fsum(getattr(h, field) for h in self.hypotheses)
+            if abs(total - 1.0) > PROB_TOL:
+                raise ValueError(f"{field}s sum to {total:.6f}, not 1")
+        for h in self.hypotheses:
+            consistent = (
+                set(self.evidence_moves) <= set(h.moves)
+                and (self.evidence_item is None or h.item == self.evidence_item)
+                and (self.evidence_ability is None or h.ability == self.evidence_ability)
+            )
+            if not consistent and h.posterior > PROB_TOL:
+                raise ValueError(f"set {h.set_id} contradicts the evidence but has posterior > 0")
+        return self
+
+    def move_probability(self, move_id: str) -> float:
+        """P(opponent carries this move) = Σ posterior of sets containing it."""
+        return math.fsum(h.posterior for h in self.hypotheses if move_id in h.moves)
+
+
+class ActionPrediction(Strict):
+    """Opponent's next action distribution (XGBoost later; heuristic fallback earlier)."""
+
+    p_attack: float = Field(ge=0.0, le=1.0)
+    p_switch: float = Field(ge=0.0, le=1.0)
+    p_utility: float = Field(ge=0.0, le=1.0)
+    model_version: str
+
+    @model_validator(mode="after")
+    def _sums(self) -> Self:
+        total = self.p_attack + self.p_switch + self.p_utility
+        if abs(total - 1.0) > PROB_TOL:
+            raise ValueError(f"action probabilities sum to {total:.6f}, not 1")
+        return self
+
+
+# --------------------------------------------------------------------------- wrapper
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class SubsystemResult(BaseModel, Generic[T]):
+    status: SubsystemStatus
+    latency_ms: float = Field(ge=0)
+    payload: T | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if self.status in (SubsystemStatus.OK, SubsystemStatus.FALLBACK) and self.payload is None:
+            raise ValueError(f"status {self.status.value} requires a payload")
+        if self.status in (SubsystemStatus.ERROR, SubsystemStatus.TIMEOUT) and not self.error:
+            raise ValueError(f"status {self.status.value} requires an error message")
+        return self
+
+
+# --------------------------------------------------------------------------- synthesis guardrail
+
+
+class Recommendation(Strict):
+    """The only object the LLM is allowed to produce.
+
+    Validate with context to enforce legality against the live state:
+        Recommendation.model_validate(llm_json, context={"state": game_state,
+                                                         "allowed_numbers": {...}})
+    A ValidationError here is the signal for the orchestrator to retry the LLM.
+    """
+
+    action: ActionKind
+    move_id: ShowdownId | None = None
+    switch_index: int | None = None
+    headline: str = Field(min_length=1, max_length=120)  # "68% switch odds -> Ice Beam"
+    explanation: str = Field(min_length=1, max_length=600)
+    cited_numbers: dict[str, float] = Field(default_factory=dict)  # every number in the text
+
+    @model_validator(mode="after")
+    def _shape_and_legality(self, info: ValidationInfo) -> Self:
+        if self.action is ActionKind.MOVE and (self.move_id is None or self.switch_index is not None):
+            raise ValueError("a move recommendation needs move_id and no switch_index")
+        if self.action is ActionKind.SWITCH and (self.switch_index is None or self.move_id is not None):
+            raise ValueError("a switch recommendation needs switch_index and no move_id")
+
+        ctx = info.context or {}
+        state: GameState | None = ctx.get("state")
+        if state is not None:
+            req = state.me.request
+            if req is None:
+                raise ValueError("no pending request: nothing can be recommended")
+            if self.action is ActionKind.MOVE and self.move_id not in req.available_moves:
+                raise ValueError(f"illegal move {self.move_id!r}; legal: {req.available_moves}")
+            if self.action is ActionKind.SWITCH and self.switch_index not in req.available_switches:
+                raise ValueError(
+                    f"illegal switch {self.switch_index}; legal: {req.available_switches}"
+                )
+
+        allowed: dict[str, float] | None = ctx.get("allowed_numbers")
+        if allowed is not None:
+            # Rule 1: the LLM may only repeat numbers the math/ML layers produced.
+            for key, val in self.cited_numbers.items():
+                if key not in allowed or abs(allowed[key] - val) > 1e-9:
+                    raise ValueError(f"cited number {key}={val} was not produced by a subsystem")
+        return self
