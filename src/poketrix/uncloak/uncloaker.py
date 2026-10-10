@@ -21,6 +21,7 @@ from poketrix.schemas import (
     SetPosterior,
     SubsystemResult,
     SubsystemStatus,
+    moves_fit,
     to_id,
 )
 
@@ -58,7 +59,7 @@ class Inference:
 
 
 def _fits_moves(row: PriorSet, evidence: SetEvidence) -> bool:
-    return set(evidence.revealed_moves) <= set(row.pokemon_set.moves)
+    return moves_fit(evidence.revealed_moves, row.pokemon_set.moves)
 
 
 def _fits_item_and_ability(row: PriorSet, evidence: SetEvidence) -> bool:

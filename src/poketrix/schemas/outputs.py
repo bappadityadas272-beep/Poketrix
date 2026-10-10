@@ -13,7 +13,7 @@ from typing_extensions import Self
 from .battle import GameState
 from .enums import ActionKind, Generation, SubsystemStatus
 from .generation import rules_for
-from .pokemon import ShowdownId, Strict
+from .pokemon import ShowdownId, Strict, move_matches, moves_fit
 
 PROB_TOL = 1e-6
 
@@ -136,7 +136,7 @@ class SetPosterior(Strict):
                 raise ValueError(f"{field}s sum to {total:.6f}, not 1")
         for h in self.hypotheses:
             consistent = (
-                set(self.evidence_moves) <= set(h.moves)
+                moves_fit(self.evidence_moves, h.moves)
                 and (self.evidence_item is None or h.item == self.evidence_item)
                 and (self.evidence_ability is None or h.ability == self.evidence_ability)
             )
@@ -146,7 +146,9 @@ class SetPosterior(Strict):
 
     def move_probability(self, move_id: str) -> float:
         """P(opponent carries this move) = Σ posterior of sets containing it."""
-        return math.fsum(h.posterior for h in self.hypotheses if move_id in h.moves)
+        return math.fsum(
+            h.posterior for h in self.hypotheses if any(move_matches(move_id, m) for m in h.moves)
+        )
 
     def item_probability(self, item_id: str | None) -> float:
         """P(opponent holds this item); `None` asks for "no item"."""

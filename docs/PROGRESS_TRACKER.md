@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal awaiting approval)
+Last updated: 2026-10-11 (Task 05 step 1, the spectator-mode parser, built; awaiting review)
 
 ## Status at a glance
 
@@ -11,12 +11,12 @@ Last updated: 2026-10-11 (Phase 4 complete, cp-04; Phase 5 design proposal await
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Design proposed on `task/05-showdown-parser`, **awaiting approval** | |
+| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode, evidence rules) built on `task/05-showdown-parser`, **awaiting review**; step 2 (player mode, real replays) to follow | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 731 passing. `ruff check src tests` is clean.
+Tests: 731 passing on `main`. On `task/05-showdown-parser`: 807 tests, all passing except the timing tests, which fail intermittently under machine load (see Task 05, step 1). `ruff` is clean.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -1467,9 +1467,9 @@ out. No live connection, browser extension or WebSocket client; those come later
 
 Then **stop** and ask the user to approve or adjust the proposal before writing any parser code.
 
-## Task 05 design proposal — Showdown battle-log parser (2026-10-11, awaiting approval)
+## Task 05 design proposal — Showdown battle-log parser (2026-10-11, approved)
 
-Branch `task/05-showdown-parser`. No parser code exists. The observations below come from
+Branch `task/05-showdown-parser`. The observations below come from
 `sim/SIM-PROTOCOL.md` in the pinned `pokemon-showdown` 0.11.11 and from 500 battles I simulated
 locally with that package (200 in Gen 4, 100 each in Gens 1–3), in a temp folder outside the repo.
 No replay has been downloaded; I only queried the public replay search listing to see that all
@@ -1638,7 +1638,7 @@ them: they stay in git-ignored `data/raw/`, and only aggregate numbers go into t
 The live client, WebSocket or browser overlay; doubles; team preview (no Gen 1–4 Random Battle
 uses it); Phase 6 orchestration; and using damage amounts as evidence (04b).
 
-### 7. Decisions needed before any code
+### 7. Decisions asked before any code
 
 | # | Question | Recommendation |
 |---|----------|----------------|
@@ -1651,6 +1651,123 @@ uses it); Phase 6 orchestration; and using damage amounts as evidence (04b).
 | P7 | Player mode: take our spreads from the Phase 4 prior table and verify them against the request's stats? | Yes |
 | P8 | Keep `BattlePokemon.volatiles` free-form, with the parser emitting a documented list, or turn it into a closed enum now? | Keep free-form; document the list |
 | P9 | Build order: spectator mode and the evidence rules first (stop for review), then player mode and the real-replay measurements? | Yes, two steps |
+
+### Decisions (2026-10-11, user)
+
+P1–P9: the user chose every recommendation. Typed events with one mutable tracker and per-turn
+snapshots; simulated battles as ground truth (500 per generation on demand, 10 per generation
+committed); real replays may be downloaded (500 per generation, into git-ignored `data/raw/`)
+and none are committed; rules N1–N4; own spreads from the prior table in player mode; volatiles
+stay free-form; two build steps.
+
+## Task 05, step 1 — spectator-mode parser and evidence rules (built 2026-10-11, awaiting review)
+
+Branch `task/05-showdown-parser`. Not merged, not tagged, not pushed. No replay was downloaded
+in this step; that belongs to step 2.
+
+Tests: 807 in total (731 before + 76 new). `ruff check src tests` is clean. **Test status needs
+your attention:** all 76 new tests and all functional tests pass, but the five calculator *timing*
+tests now fail intermittently on this machine (three full runs: 1, 5 and 2 failures, all of them
+timing tests). See "Timing tests under load" below.
+
+### What was built
+
+- **`scripts/randbats/build_battles.mjs`** (`npm run build-battles`): plays seeded Random
+  Battles with the pinned simulator and two random players, and saves the spectator log with both
+  true teams. Fixtures: 10 battles per generation in `tests/fixtures/battles_gen{N}.json`
+  (575 KB in total, 1,725 turns). The 500-per-generation corpus (30 MB) is generated on demand
+  into git-ignored `data/raw/battles/`.
+- **`poketrix.showdown`:**
+
+  | Module | Responsibility |
+  |--------|----------------|
+  | `events.py` | 22 immutable, typed events |
+  | `protocol.py` | `parse_line(text) -> Event \| None` |
+  | `tracker.py` | `BattleTracker`: the only place state changes; builds validated `GameState`s |
+  | `evidence.py` | `EvidenceBook`: the evidence rules, separate from state tracking |
+  | `replay.py` | `parse_battle(text) -> BattleRecord` with one `TurnSnapshot` per turn |
+  | `validation.py` | checks the evidence against true teams; `python -m poketrix.showdown.validation [dir]` |
+
+- **Schemas:** `move_matches` / `moves_fit` (see "Hidden Power" below).
+
+### Ground-truth validation
+
+Every claim the parser makes about a set was compared with the true team:
+
+| Gen | Battles | Turns | Pokémon seen | Moves revealed | Items identified | Abilities identified | Exclusions made | False claims |
+|-----|---------|-------|--------------|----------------|------------------|----------------------|-----------------|--------------|
+| 1 | 500 | 18,504 | 5,440 | 13,827 | — | — | — | 0 |
+| 2 | 500 | 36,244 | 5,085 | 15,126 | 3,945 | — | 259 | 0 |
+| 3 | 500 | 23,088 | 5,349 | 14,063 | 3,812 | 679 | 1,353 | 0 |
+| 4 | 500 | 17,759 | 5,361 | 12,323 | 3,493 | 1,175 | 4,652 | 0 |
+
+- 2,000 battles, 21,235 Pokémon, 55,339 revealed moves, 11,250 items, 1,854 abilities and 6,264
+  exclusions: **no false claim**, no anomaly, and no unknown message type (strict mode).
+- Which exclusions fired: Leftovers 2,149 and Black Sludge 1,051 (N1), Life Orb 1,182 (N2),
+  Choice items 1,877 (N3), Water Absorb 5 (N4).
+- End to end on the committed fixtures: evidence parsed from the log keeps the true set alive in
+  the uncloaker's main path for at least 99.5% of Pokémon in every generation.
+- Speed: 0.07 ms per log line including a validated snapshot every turn (target: under 1 ms).
+
+### What the validation caught while building
+
+Each of these would have corrupted the posterior silently:
+
+1. **Hidden Power's type is not in the log.** The log says "Hidden Power"; sets say
+   `hiddenpowerice`. The untyped id would have contradicted every known set. Now one rule,
+   `move_matches`, says the untyped move matches any typed one; the uncloaker, the `SetPosterior`
+   validator and `BattlePokemon` all use it. This is a small change to approved Phase 4 code.
+2. **A stolen item was credited to the thief.** After Thief, the thief's Leftovers recovery was
+   read as its own item. An item received through a swap now never counts as original.
+3. **`[of]` does not always name the owner.** On `-heal … [from] ability: Water Absorb|[of] X`,
+   X is the attacker. Abilities on a heal are credited to the healed Pokémon; `[of]` names the
+   owner only where the ability acted on someone else (Static, Intimidate, Sand Stream, Rough
+   Skin).
+4. **N3 excluded Choice items in Gen 1.** Exclusions are now limited to items that exist in the
+   generation and abilities the species can have.
+
+### Changes to the proposed rules
+
+- **N1 is narrower than proposed.** "Below 100% at the end of the turn" is not safe: poison,
+  burn and weather damage can come after the moment Leftovers would act, so a full-HP holder is
+  not healed and then drops below 100%. N1 now requires the Pokémon to have been below full HP
+  *before* the end-of-turn phase (damaged by a move this turn, or already damaged when the turn
+  began), with no reading of 100% since.
+- **N2 and N4 close when the end-of-turn phase begins**, so Future Sight or poison damage is
+  never mistaken for damage from the last move.
+- **Once the item (or ability) is known, nothing more is ruled out for it.**
+- Handled as proposed: called moves in both tag spellings, own-move continuations, Transform,
+  Mimic, Struggle, Trick/Switcheroo/Thief/Covet, Trace, Baton Pass, cosmetic formes, Gen 1
+  Reflect and Light Screen (they sit on the Pokémon; the snapshot mirrors them into the side
+  conditions the calculator reads).
+
+### Timing tests under load
+
+- The five tests that assert a report takes under 5 ms (8 ms for Gens 1–2) failed in some full
+  runs today. Measured alone, the report's best time is unchanged (about 3 ms), but the median
+  varies from 3.8 to 11 ms between runs. With my changes stashed, the same test took 11 ms, so
+  this is not a regression from Phase 5.
+- The likely cause is machine load: OneDrive is the top CPU consumer on this PC (the repository
+  is inside OneDrive, so it syncs `node_modules`, `.venv` and the 30 MB of `data/raw/`).
+- I have changed nothing about these tests. Options for you: move the repository out of
+  OneDrive or exclude those folders from sync; or apply review item R9 (a `slow` / `timing`
+  marker) so that timing is checked separately from correctness.
+
+### Known limits
+
+- Random players do not play like people; the simulated corpus proves the rules sound for the
+  mechanics it reaches, not for every situation on the ladder. N4 fired only 5 times.
+- A transformed Pokémon keeps its own species in the state (its copied stats and types are not
+  modelled); Kecleon's Color Change type is not tracked.
+- Timers the log does not show (weather, screens, Trick Room, Gravity) are the standard five
+  turns minus the turns elapsed; Light Clay and the weather rocks are not known.
+- Spectator mode only. Player mode (`|request|`, our own full team) and the real-replay
+  measurements, including the R8 staleness rate, are step 2.
+
+### Next (after review)
+
+Step 2: player mode, the replay download script, robustness on real replays, and the staleness
+rate. Then the Phase 5 merge and `cp-05`.
 
 ## Standing rules
 

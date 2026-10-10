@@ -7,6 +7,7 @@ Split of responsibility:
 """
 
 import re
+from collections.abc import Iterable
 from typing import Annotated
 
 from pydantic import (
@@ -37,6 +38,26 @@ _NON_ALNUM = re.compile(r"[^a-z0-9]")
 def to_id(name: str) -> str:
     """Showdown id normalisation: 'Stone Edge' -> 'stoneedge', "Farfetch'd" -> 'farfetchd'."""
     return _NON_ALNUM.sub("", str(name).lower())
+
+
+UNTYPED_HIDDEN_POWER = "hiddenpower"
+
+
+def move_matches(revealed: str, set_move: str) -> bool:
+    """Whether a move seen in battle can be this move of a set.
+
+    A battle log shows "Hidden Power" without its type, while sets name the typed move
+    (`hiddenpowerice`), so the untyped id matches any of them.
+    """
+    if revealed == UNTYPED_HIDDEN_POWER:
+        return set_move.startswith(UNTYPED_HIDDEN_POWER)
+    return revealed == set_move
+
+
+def moves_fit(revealed: Iterable[str], set_moves: Iterable[str]) -> bool:
+    """Whether every revealed move can be one of the set's moves."""
+    set_moves = tuple(set_moves)
+    return all(any(move_matches(seen, own) for own in set_moves) for seen in revealed)
 
 
 ShowdownId = Annotated[
@@ -315,7 +336,7 @@ class BattlePokemon(Strict):
                 raise ValueError("known_set is for a different species or generation")
             if ks.level != self.level:
                 raise ValueError("known_set level differs from battle level")
-            missing = set(self.revealed_moves) - set(ks.moves)
+            missing = [m for m in self.revealed_moves if not moves_fit([m], ks.moves)]
             if missing:
                 raise ValueError(f"revealed moves {sorted(missing)} are not in known_set")
         return self
