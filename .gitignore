@@ -11,3 +11,5 @@ venv/
 data/raw/
 data/cache/
 node_modules/
+# Per-machine Claude Code settings.
+.claude/settings.local.json

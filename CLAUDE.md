@@ -45,13 +45,13 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — Task 02 built on `task/02-dex-data`, awaiting review (2026-10-10)
+## Current state — checkpoint `cp-02` (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
 | cp-00 | Project skeleton (pyproject, src layout, pytest, checkpoint workflow) |
 | cp-01 | `src/poketrix/schemas/` — gen-aware contracts, 35 passing tests |
-| (cp-02 pending) | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
+| cp-02 | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -85,11 +85,11 @@ Known, deliberate gaps:
 - Natures are stored as ids. The 25-nature table belongs to the Math layer.
 - No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
 
-## ▶ START HERE: review Task 02, then Task 03
+## ▶ START HERE
 
-1. User reviews `task/02-dex-data`. After approval: merge `--no-ff` into `main`, tag `cp-02`,
-   log it in `docs/CHECKPOINTS.md`, mark it done in `README.md`.
-2. Then Task 03, Math layer (see roadmap). Propose the design first and stop for review.
+Read `docs/PROGRESS_TRACKER.md` → section **"Orders for Claude Code"** and follow the orders in that
+order. The tracker is the logbook: the user's reviewer writes verdicts and next orders there, and you
+record what you built there. Always update it at the end of a step.
 
 ## Roadmap
 
