@@ -45,12 +45,13 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-01` (2026-10-10)
+## Current state — Task 02 built on `task/02-dex-data`, awaiting review (2026-10-10)
 
 | Tag   | What exists |
 |-------|-------------|
 | cp-00 | Project skeleton (pyproject, src layout, pytest, checkpoint workflow) |
 | cp-01 | `src/poketrix/schemas/` — gen-aware contracts, 35 passing tests |
+| (cp-02 pending) | `src/poketrix/dex/` + `data/dex/` — offline Gen 1–4 dex, 68 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -62,51 +63,35 @@ Schema map (`from poketrix.schemas import ...`):
   `SubsystemResult[T]`, and `Recommendation` (the LLM guardrail). Validate it with
   `context={"state": gs, "allowed_numbers": {...}}` to reject illegal moves and invented numbers.
 
+Dex (`from poketrix.dex import Dex, UnknownDexEntryError`):
+- `Dex(gen)`: `species(name_or_id)`, `move(name_or_id)`, `all_species()`, `all_moves()`.
+  Unknown ids raise `UnknownDexEntryError` (a `KeyError`); `Dex(5)` raises `ValueError`.
+- `dex/snapshot.py` loads `data/dex/gen{N}/{species,moves}.json` once per gen (cached) and
+  validates every record against the schemas. Returned objects are shared: treat as read-only.
+- Source of truth: `@pkmn/dex` (Showdown data), version recorded in `data/dex/manifest.json`.
+  Rebuild: `cd scripts && npm install && npm run build-dex`. Node is build-time only.
+- Snapshot conventions (decided with the user):
+  - Battle formes are included (Deoxys, Rotom, Wormadam, Giratina-Origin, Shaymin-Sky, Arceus
+    types, Castform…), sharing the base `dex_number`. Count species by distinct dex number.
+  - Gen 1 Bide is stored as Normal (cartridge type), not Showdown's `???`.
+  - Typed Hidden Powers are keyed `hiddenpowerfire` etc. (Showdown shares the id `hiddenpower`),
+    with Showdown's max-IV 70 BP. Real HP type/power from IVs/DVs is the Math layer's job.
+  - Abilities are empty in Gens 1–2 and limited to those existing in that gen from Gen 3.
+  - Learnsets are deferred.
+
 Known, deliberate gaps:
-- Schemas check **structure + generation legality only**. Whether "stoneedge" really exists with the
-  right power is the dex layer's job (Task 02).
 - `BattlePokemon.volatiles` is a free-form id set. Tighten it once the Showdown parser shows the
   real set.
 - Natures are stored as ids. The 25-nature table belongs to the Math layer.
+- No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
 
-## ▶ START HERE: Task 02, Dex data layer (Gens 1–4)
+## ▶ START HERE: review Task 02, then Task 03
 
-Branch: `git switch main && git switch -c task/02-dex-data`
+1. User reviews `task/02-dex-data`. After approval: merge `--no-ff` into `main`, tag `cp-02`,
+   log it in `docs/CHECKPOINTS.md`, mark it done in `README.md`.
+2. Then Task 03, Math layer (see roadmap). Propose the design first and stop for review.
 
-**Goal:** a local, versioned, offline dex that returns schema-validated `Species` and `Move`
-objects for any generation 1–4. This gives "stoneedge" real data and feeds the Math layer (Task 03).
-
-**Step 1 — propose a data source, then STOP for review.** Candidates:
-- Pokémon Showdown's own data. Its ids match the battle protocol, and it has gen-specific mods for
-  Gen 1–4 stats, types and move changes. Options include the `@pkmn/dex` npm package
-  (gen-aware), exported once to JSON by a small Node script.
-- PokeAPI. It's the doc's original choice, but its gen-specific values (`past_types`,
-  `past_values`, Gen 1 Special) need reconstruction work.
-- Recommended: Showdown or `@pkmn` as the source of truth, with PokeAPI as an optional cross-check.
-  Present the trade-off and let the user decide.
-
-**Step 2 — build after approval:**
-- `scripts/build_dex.*` fetches or exports the raw data, then writes a compact JSON snapshot per
-  generation to `data/dex/gen{1..4}/{species,moves}.json`. The snapshot is small and committed, so
-  tests run offline; raw downloads go to the git-ignored `data/raw/`.
-- `src/poketrix/dex/`: `Dex(gen)` with `species(id) -> Species`, `move(id) -> Move`,
-  `learnset(id)` (optional, can wait for later), and an lru-cached loader. Every record is passed
-  through the schemas at load time, so bad data fails loudly.
-
-**Acceptance tests (must pass before asking to merge):**
-- Every species and move in all four snapshots validates against the schemas.
-- Species counts are 151, 251, 386 and 493 for Gens 1–4.
-- Gen 1 Magnemite is pure Electric; Gen 2 Magnemite is Electric/Steel.
-- Gen 1 Gengar has a single Special stat of 130.
-- Gen 3 Fire Punch is special; Gen 4 Fire Punch is physical.
-- Gen 1 Bite is Normal-type, with 60 BP; from Gen 2 it's Dark-type.
-- Gen 4 Garchomp has base stats 108/130/95/80/85/102.
-- Unknown ids raise a clear `KeyError`-style error, and `Dex(5)` is rejected.
-- `ruff` is clean and the full `pytest` suite is green.
-
-**Then:** stop and ask the user for review. Once they approve, merge, tag `cp-02` and log it.
-
-## Roadmap after Task 02
+## Roadmap
 
 03 Math layer (type chart per gen, stat formula, damage rolls, exact KO odds, then Monte Carlo;
    Gen 4 first, verified against the Showdown damage calc) → 04 Bayesian set uncloaker →

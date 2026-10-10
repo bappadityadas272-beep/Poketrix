@@ -12,7 +12,7 @@ and an LLM that only ever *explains* already-computed numbers.
 |---|-------|--------|
 | 0 | Repo scaffold + checkpoint workflow | done |
 | 1 | Shared Pydantic schemas (gen-aware) | done (cp-01) |
-| 2 | Dex data layer (Gens 1–4 species/moves snapshot) | next — see CLAUDE.md |
+| 2 | Dex data layer (Gens 1–4 species/moves snapshot) | built, awaiting review (`task/02-dex-data`) |
 | 3 | Deterministic Math layer (type chart, stats, damage) — Gen 4 first, then 3 → 2 → 1 | |
 | 4 | Bayesian set uncloaker (Showdown Gen 1–4 Random Battle set pools as priors) | |
 | 5 | Showdown battle-log parser → `GameState` | |

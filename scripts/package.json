@@ -1,0 +1,12 @@
+{
+  "name": "poketrix-dex-build",
+  "private": true,
+  "description": "Build-time only: exports the Gen 1-4 dex snapshot from @pkmn/dex. Not needed at runtime.",
+  "type": "module",
+  "scripts": {
+    "build-dex": "node build_dex.mjs"
+  },
+  "devDependencies": {
+    "@pkmn/dex": "0.10.11"
+  }
+}
