@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-10 (Phase 3 complete, merged as cp-03c; Task 04 design proposal next)
+Last updated: 2026-10-10 (Phase 3 complete, cp-03c; Task 04 design proposal awaiting approval)
 
 ## Status at a glance
 
@@ -10,7 +10,7 @@ Last updated: 2026-10-10 (Phase 3 complete, merged as cp-03c; Task 04 design pro
 | 1 | Shared Pydantic schemas (Gen 1–4 aware) | Done, merged | `cp-01` |
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
-| 4 | Bayesian set uncloaker | Next: design proposal (Order 4) | |
+| 4 | Bayesian set uncloaker | Design proposed on `task/04-bayes-uncloaker`, **awaiting approval** | |
 | 5 | Showdown battle-log parser → `GameState` | Not started | |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
@@ -820,6 +820,11 @@ Findings. None block the merge, but R1 must be done before the merge commit (Ord
    `README.md`, and push with `git push origin main --tags`.
 4. Report the push result in one line under this order.
 
+**Result (2026-10-10): done.** R1–R3 applied (`.gitattributes` and renormalisation as their own
+commit; fixture log added; Gen 1 Explosion pinned by a test), 679 tests green and ruff clean on
+`main`, pushed: `a5980b2..dcee5f6 main -> main`, new tag `cp-03c`. R4 and R5 are recorded in
+`CLAUDE.md` under "Carried forward".
+
 ### Order 4: Task 04 design proposal, the Bayesian set uncloaker. **STOP after the proposal.**
 Branch: `task/04-bayes-uncloaker`. Write the proposal as a new section in this tracker. This is the first
 layer that is genuinely machine learning, so the proposal must show how we will **measure** it, not
@@ -868,6 +873,212 @@ The proposal must cover:
    granularity, whether 04b is in Phase 4, and the evaluation targets.
 
 Then **stop** and ask the user to approve or adjust the proposal before writing any code.
+
+## Task 04 design proposal — Bayesian set uncloaker (2026-10-10, awaiting approval)
+
+Branch `task/04-bayes-uncloaker`. No Task 04 code exists in the repo. The numbers below come from
+throwaway scripts run in a temp folder outside the repo, against `pokemon-showdown` 0.11.11.
+
+### 1. Where the prior comes from
+
+**What Showdown's Random Battle data actually is** (`data/random-battles/gen{N}/` in
+`smogon/pokemon-showdown`): movepools plus generator code, not finished sets with frequencies.
+
+| Gen | Data file | Layout | Generator |
+|-----|-----------|--------|-----------|
+| 1 | `data.json` (25 KB, 146 species) | per species: `level`, `moves`, and optional `essentialMoves`, `exclusiveMoves`, `comboMoves` | `teams.ts` (13 KB) |
+| 2 | `sets.json` (51 KB, 141 species, 267 role sets) | per species: `level`, `sets[]` of `role` + `movepool` (+ `preferredTypes`) | `teams.ts` (19 KB) |
+| 3 | `sets.json` (103 KB, 220 species, 394 role sets) | as Gen 2, plus `abilities` per role set | `teams.ts` (30 KB) |
+| 4 | `sets.json` (121 KB, 295 species, 464 role sets) | as Gen 3 | `teams.ts` (29 KB) |
+
+- A role's movepool has up to 10 moves; the generator picks 4 by rules (role, STAB, team needs).
+- **Items are not in the data at all.** They are chosen by code (`getPriorityItem`, `getItem`)
+  from the moves, ability, role and whether the Pokémon leads.
+- Choices also depend on the rest of the team (screens, Rapid Spin, Spikes already present).
+
+So the true prior is whatever the generator produces. The three options:
+
+| Option | Verdict |
+|--------|---------|
+| **(a) Sample the official generator** | **Recommended.** `Teams.generate('gen4randombattle', {seed})` from the `pokemon-showdown` npm package works for all four formats and takes under 1 ms per team. |
+| (b) Parse the movepools analytically | Not recommended: it means re-implementing about 90 KB of generator rules, including the item code and the team-level dependencies. |
+| (c) Smogon usage statistics | **Not available.** The monthly stats listings (checked 2025-12 and 2026-08) contain `gen4ou` but no Random Battle format. |
+
+**How many teams (N).** Two independent seeds were compared at three sizes. "Mass on unseen sets"
+is the share of the second sample's Pokémon whose exact set never appeared in the first; "seed
+distance" is the mean total-variation distance between the two samples' per-species set
+frequencies.
+
+| Teams per seed | Measure | Gen 1 | Gen 2 | Gen 3 | Gen 4 |
+|----------------|---------|-------|-------|-------|-------|
+| 2,000 | mass on unseen sets | 0.07% | 0.03% | 1.33% | 1.64% |
+| 2,000 | seed distance | 0.075 | 0.078 | 0.195 | 0.169 |
+| 20,000 | mass on unseen sets | under 0.005% | under 0.005% | 0.01% | 0.01% |
+| 20,000 | seed distance | 0.020 | 0.020 | 0.067 | 0.048 |
+| 100,000 | mass on unseen sets | under 0.005% | under 0.005% | under 0.005% | under 0.005% |
+| 100,000 | seed distance | 0.008 | 0.010 | 0.032 | 0.022 |
+
+At 100,000 teams: 431 / 584 / 1,346 / 1,746 distinct sets (Gens 1–4), a median of 3–5 and a
+maximum of 42 per species, and the rarest species still has 66 samples (Gen 3). Generating them
+takes about 1 to 1.5 minutes per generation. **Recommendation: N = 100,000 teams per generation.**
+
+**Pinning.** `pokemon-showdown` 0.11.11 (MIT), the seeds and N are written to a manifest next to
+the tables, as for `@pkmn/dex` and `@smogon/calc`.
+
+**Two things you should know about this dependency:**
+
+- It is heavy: 183 packages, 181 MB installed. It is build-time only and git-ignored, and I would
+  put it in its own `scripts/randbats/package.json` so the usual `npm install` for the dex and
+  the fixtures does not pull it in.
+- The live Showdown server changes its Random Battle sets more often than the npm package is
+  published. A pinned prior can be behind the ladder; section 4 and the shift test in section 5
+  are how we stay safe when it is.
+
+### 2. What a hypothesis is
+
+- One hypothesis = (species, the set of moves, item, ability).
+- **Level is fixed per species**: in 100,000 teams no species appeared at two levels in any
+  generation.
+- **The spread is not one per species** (31 / 63 / 134 / 89 species show more than one), because
+  the generator derives it from the moves: Hidden Power's IVs, Attack 0 with no physical move,
+  Speed 0 for Gyro Ball or Trick Room. Otherwise it is 85 EVs in every stat and no nature (Gens
+  3–4), or maximum DVs and Stat Exp (Gens 1–2). I expect the spread to be a function of the set;
+  the build script asserts that and fails if a set shows two spreads.
+- So each table row carries: moves, item, ability, count, and the level and spread needed to
+  build a `PokemonSet` for the calculator.
+- Generator formes the dex does not have (cosmetic ones such as the Unown letters) are folded
+  into their base species; real formes (Rotom-Wash, Deoxys-Speed) keep their own rows.
+
+### 3. Evidence and updates (04a)
+
+- **Input:** a new `SetEvidence` schema — `revealed_moves`, `item`, `ruled_out_items`, `ability`,
+  `ruled_out_abilities`. The Task 05 parser fills it; until then tests build it directly.
+- **Update:** posterior ∝ prior count × likelihood. The likelihood is 0 for a set that lacks a
+  revealed move, has a different item or ability than the revealed one, or has a ruled-out item
+  or ability; otherwise `1 / C(moves in set, moves revealed)`, which treats every move of a set as
+  equally likely to have been shown. That factor only matters between sets of different sizes
+  (Ditto has one move).
+- **Negative evidence:**
+  - four distinct moves revealed: the moveset is known, and only item and ability remain open;
+  - a consumed or removed item is still evidence of what the item was;
+  - `ruled_out_items` lets the parser say "took damage and did not recover at end of turn, so not
+    Leftovers", "attacked with no recoil, so not Life Orb", "used two different moves in a row,
+    so not a Choice item". The uncloaker only applies these; detecting them is Task 05's job.
+- **Output:** the existing `SetPosterior` (hypotheses with prior and posterior, and
+  `move_probability`), plus item and ability marginals computed the same way. No change to
+  `SetPosterior` is needed; `PokemonSet`s for the calculator come from a lookup by `set_id`.
+- **Not evidence:** a move called by Sleep Talk, Metronome or Copycat is not one of the user's
+  four slots unless the log shows it as such. That distinction is also Task 05's.
+
+**04b, damage-based evidence** (the likelihood of an observed damage percentage under each
+hypothesis, using the calc engines, for example Choice Band against Life Orb). Recommendation:
+**defer it until after Task 05.** It needs observed damage from real logs, and its value depends
+on how precise the log's HP percentages are, which we cannot measure before the parser exists.
+`SetEvidence` is designed so a per-hypothesis likelihood can be added later without changing 04a.
+
+### 4. Zero-probability safety
+
+At N = 100,000 the sampling itself almost never misses a set, so evidence that contradicts every
+hypothesis will mostly mean the prior is stale or the log is unusual. The uncloaker backs off in
+tiers and never raises:
+
+| Tier | When | What is returned | Status |
+|------|------|------------------|--------|
+| 1 | some hypothesis fits all the evidence | the Bayes posterior | `ok` |
+| 2 | none fits, but some fit the revealed moves | the posterior from the moves alone; the conflicting item or ability evidence is kept in the output and each hypothesis takes the revealed item or ability | `fallback` |
+| 3 | no known set contains the revealed moves | one synthesised hypothesis per plausible completion: the revealed moves plus the species' most likely other moves, weighted by smoothed per-move frequencies | `fallback` |
+| 4 | the species is not in the table and nothing is revealed | no payload, with an error message | `error` |
+
+In every tier with a payload the `SetPosterior` validator holds: probabilities sum to 1, and no
+hypothesis that contradicts the evidence has a posterior above 0.
+
+### 5. Evaluation
+
+**Method.** Build the prior from one seed; evaluate on fresh teams from a different seed. For each
+held-out Pokémon and each k = 0…4, reveal k of its moves at random and compare the posterior with
+the truth. The script is committed (`scripts/randbats/evaluate.*` driving the Python uncloaker),
+and its output table is pasted into this tracker so the numbers can be reproduced.
+
+**What a throwaway version already measures** (prior from 20,000 teams, 5,000 held-out teams,
+moves only, no item or ability revealed):
+
+| Gen | k | True set kept | Top-1 | Top-3 | Set log-loss | Move Brier | Move calibration error |
+|-----|---|---------------|-------|-------|--------------|------------|------------------------|
+| 4 | 0 | 99.98% | 0.383 | 0.769 | 1.408 | 0.152 | 0.003 |
+| 4 | 1 | 99.98% | 0.503 | 0.858 | 1.037 | 0.141 | 0.003 |
+| 4 | 2 | 99.98% | 0.629 | 0.929 | 0.703 | 0.135 | 0.006 |
+| 4 | 3 | 99.98% | 0.780 | 0.980 | 0.383 | 0.133 | 0.010 |
+| 4 | 4 | 99.98% | 0.970 | 0.999 | 0.047 | — | — |
+| 3 | 0 | 99.99% | 0.371 | 0.767 | 1.401 | 0.158 | 0.004 |
+| 3 | 2 | 99.997% | 0.656 | 0.949 | 0.629 | 0.132 | 0.006 |
+| 3 | 4 | 99.997% | 0.986 | 1.000 | 0.022 | — | — |
+| 2 | 0 | 100% | 0.447 | 0.842 | 1.134 | 0.151 | 0.003 |
+| 2 | 2 | 100% | 0.721 | 0.975 | 0.471 | 0.117 | 0.008 |
+| 2 | 4 | 100% | 0.993 | 1.000 | 0.010 | — | — |
+| 1 | 0 | 100% | 0.576 | 0.922 | 0.865 | 0.098 | 0.002 |
+| 1 | 2 | 100% | 0.769 | 0.973 | 0.446 | 0.097 | 0.003 |
+| 1 | 4 | 100% | 1.000 | 1.000 | 0.000 | — | — |
+
+Reading it: with nothing revealed the single most likely set is right 37–58% of the time and the
+true set is in the top three 77–92% of the time; two revealed moves raise top-3 to 93–97%. With
+all four moves known, what remains is the item (and ability), which is why Gen 4 stops at 97%.
+
+**Proposed targets** (tested, so a regression fails the suite):
+
+| Metric | Target |
+|--------|--------|
+| True set keeps a non-zero posterior on tier 1 | at least 99.9% in every generation and every k |
+| The uncloaker never raises | 100% of held-out cases return a `SubsystemResult` |
+| Move calibration error (10 bins) | at most 0.02 at every k |
+| Set log-loss | lower than "uniform over the sets that fit the evidence" at every k |
+| Top-1 and top-3 accuracy | reported per k; must not fall more than 0.02 below the table above |
+
+**What this evaluation can and cannot show.** Held-out teams come from the same generator as the
+prior, so this measures whether the implementation is correct and well calibrated; a Bayes
+posterior over the true prior is the best possible answer here. It does **not** measure how the
+model does when the ladder's sets have moved on. For that I propose one more, deliberately unfair
+test: delete a random 5% of sets from the prior, evaluate on the full held-out data, and report
+how often tiers 2 and 3 fire and how good their move probabilities are. Real-ladder accuracy can
+only be measured once Task 05 can read real battle logs.
+
+### 6. Consumer contract
+
+The Math layer uses the posterior through one new function, with no new calculator code:
+
+```python
+def threat_report(
+    ours: BattlePokemon, theirs: BattlePokemon, posterior: SetPosterior, prior: SetPrior,
+    field: FieldState, our_conditions: SideConditions, their_conditions: SideConditions,
+) -> SubsystemResult[ThreatReport]
+```
+
+For each move the opponent may carry it gives P(move), the damage to our active Pokémon averaged
+over the hypotheses that carry it, and the worst case among them. It builds each hypothesis's
+`PokemonSet` from the prior table and calls the existing `evaluate_move`. Signature only for now;
+`ThreatReport` would be a small new output schema. A move the calculator reports as unsupported
+stays unsupported in the report (review finding R5).
+
+### 7. Size and speed
+
+- **Tables:** `data/randbats/gen{N}/sets.json`, one row per set. The set keys alone total about
+  280 KB for all four generations; with counts, levels and spreads I estimate **under 1 MB in
+  total**, well inside the 5 MB cap.
+- **Speed:** one update filters at most 42 hypotheses for a species. The target of 5 ms per
+  Pokémon should be met with a wide margin; a timing test will assert it.
+
+### 8. Decisions needed before any code
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| D1 | Prior source: sample the official generator (a), parse movepools (b), or usage stats (c, not available)? | (a) |
+| D2 | Accept `pokemon-showdown` 0.11.11 as a build-time dependency (181 MB installed, git-ignored), in its own `scripts/randbats/` folder? | Yes |
+| D3 | N = 100,000 teams per generation for the prior (about 1.5 minutes each to build)? | Yes |
+| D4 | Hypothesis = (species, moves, item, ability), with level and spread stored per set? | Yes |
+| D5 | Include `ruled_out_items` / `ruled_out_abilities` in 04a's evidence, to be filled by the Task 05 parser? | Yes |
+| D6 | 04b (damage-based evidence): part of Phase 4, or deferred until after Task 05? | Defer |
+| D7 | Accept the evaluation targets in section 5, including the 5%-deleted shift test? | Yes |
+| D8 | Add the `threat_report` function and `ThreatReport` schema in Task 04, or leave the consumer side to Phase 6? | Add it in Task 04, as a second step after the uncloaker is reviewed |
+| D9 | Package name: `poketrix.uncloak`? | Yes |
 
 ## Standing rules
 
