@@ -162,7 +162,7 @@ Known, deliberate gaps:
 
 ## ▶ START HERE
 
-Read `docs/PROGRESS_TRACKER.md` → section **"Orders for Claude Code"** and follow the orders in that
+Read `docs/PROGRESS_TRACKER.md` → the **"▶ Current orders"** table at the top, then the matching **"▶ ACTIVE — Orders"** section and follow the orders in that
 order. The tracker is the logbook: the user's reviewer writes verdicts and next orders there, and you
 record what you built there. Always update it at the end of a step.
 

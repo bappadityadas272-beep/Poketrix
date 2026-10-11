@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Task 05 step 1, the spectator-mode parser, built; awaiting review)
+Last updated: 2026-10-11 (Task 05 step 1 approved; orders 7–8 issued: test hygiene, then step 2)
 
 ## Status at a glance
 
@@ -11,12 +11,22 @@ Last updated: 2026-10-11 (Task 05 step 1, the spectator-mode parser, built; awai
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode, evidence rules) built on `task/05-showdown-parser`, **awaiting review**; step 2 (player mode, real replays) to follow | |
+| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode) **approved**; step 2 next (Orders 7–8) | `cp-05` pending |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
 Tests: 731 passing on `main`. On `task/05-showdown-parser`: 807 tests, all passing except the timing tests, which fail intermittently under machine load (see Task 05, step 1). `ruff` is clean.
+
+## ▶ Current orders (read this first)
+
+| Order | What | Stop? | Status |
+|-------|------|-------|--------|
+| 7 | Test hygiene: timing/slow markers (R12/R9), transform test (R11), rare-rule fixtures (R13) | No (pre-approved) | **To do** |
+| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **To do** |
+
+Full text is in the section "▶ ACTIVE — Orders for Claude Code, batch 4", near the end of this file. Orders 1–6 are done and are
+kept below as history. When an order finishes, set its row here to **Done** with the commit or tag.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -107,9 +117,9 @@ Findings to carry forward. None of them block the merge.
 - **F3:** `.claude/settings.local.json` is per-machine Claude Code configuration. Add it to `.gitignore` and don't commit it.
 - **F4:** this tracker file is untracked. Commit it with the merge, because it is the logbook.
 
-## Orders for Claude Code (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code (do these in order, stopping where marked)
 
-### Order 1: close Task 02 (no stop needed, the user has approved)
+### ✅ DONE — Order 1: close Task 02 (no stop needed, the user has approved) _(→ cp-02)_
 1. On `task/02-dex-data`, add `.claude/settings.local.json` to `.gitignore` and commit this tracker and the
    `CLAUDE.md` pointer change.
 2. Run `git switch main`, then `git merge --no-ff task/02-dex-data`, then `git tag -a cp-02 -m "Dex data layer, Gens 1-4"`.
@@ -121,7 +131,7 @@ Findings to carry forward. None of them block the merge.
 `main`, pushed (`5cf9c2d..7621b89 main -> main`, new tag `cp-02`). GitHub reported that the repository
 moved to `bappadityadas272-beep/Poketrix` (capital P); the old URL still redirects.
 
-### Order 2: Task 03 design proposal, Math layer, Gen 4 first. **STOP after the proposal.**
+### ✅ DONE — Order 2: Task 03 design proposal, Math layer, Gen 4 first. **STOP after the proposal.** _(→ proposal approved, built as cp-03a/b/c)_
 Branch: `task/03-math-gen4`. Write the proposal as a new section in this tracker, not as a new file.
 It must cover:
 
@@ -809,9 +819,9 @@ Findings. None block the merge, but R1 must be done before the merge commit (Ord
 - **R5: callers of unsupported moves.** Later phases must treat the unsupported list (Counter, Bide, Present, …) as a
   `SubsystemResult` with status `fallback` or `error`, and never as zero damage. Carry this forward to Phase 6.
 
-## Orders for Claude Code, batch 2 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 2 (do these in order, stopping where marked)
 
-### Order 3: close Task 03c and Phase 3 (no stop needed, the user has approved)
+### ✅ DONE — Order 3: close Task 03c and Phase 3 (no stop needed, the user has approved) _(→ cp-03c)_
 1. On `task/03c-gens-3-2-1`, do R1 (line endings) as its own commit, then R2 and R3. Run `pytest` and
    `ruff check src tests`; both must be green.
 2. Run `git switch main`, then `git merge --no-ff task/03c-gens-3-2-1`, then
@@ -825,7 +835,7 @@ commit; fixture log added; Gen 1 Explosion pinned by a test), 679 tests green an
 `main`, pushed: `a5980b2..dcee5f6 main -> main`, new tag `cp-03c`. R4 and R5 are recorded in
 `CLAUDE.md` under "Carried forward".
 
-### Order 4: Task 04 design proposal, the Bayesian set uncloaker. **STOP after the proposal.**
+### ✅ DONE — Order 4: Task 04 design proposal, the Bayesian set uncloaker. **STOP after the proposal.** _(→ proposal approved, built as cp-04)_
 Branch: `task/04-bayes-uncloaker`. Write the proposal as a new section in this tracker. This is the first
 layer that is genuinely machine learning, so the proposal must show how we will **measure** it, not
 just how we will build it.
@@ -1399,9 +1409,9 @@ I checked the following on the user's machine:
   keeps growing, add a `slow` pytest marker for the evaluation tests (`pytest -m "not slow"` for quick
   runs), with the full suite still required before every merge. Don't do this now.
 
-## Orders for Claude Code, batch 3 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 3 (do these in order, stopping where marked)
 
-### Order 5: R6 + R7, then close Phase 4 (pre-approved, no stop if the checks pass)
+### ✅ DONE — Order 5: R6 + R7, then close Phase 4 (pre-approved, no stop if the checks pass) _(→ cp-04)_
 1. On `task/04-bayes-uncloaker`, add `worst_crit_pct` to `MoveThreat` (R6), and add `p_ko_best_move` and
    `ko_lower_bound` to `ThreatReport` (R7). Update the docstrings and this tracker's "What a `MoveThreat` says"
    table.
@@ -1424,7 +1434,7 @@ an unsupported move sets `ko_lower_bound`; the bounds hold on 50 seeded held-out
 ruff clean; the report stays under 50 ms. Merged, tagged and pushed:
 `dcee5f6..2d3887f main -> main`, new tag `cp-04`.
 
-### Order 6: Phase 5 design proposal, the Showdown battle-log parser. **STOP after the proposal.**
+### ✅ DONE — Order 6: Phase 5 design proposal, the Showdown battle-log parser. **STOP after the proposal.** _(→ proposal approved, step 1 built and approved)_
 Branch: `task/05-showdown-parser`. Write the proposal as a new section in this tracker.
 Phase 5 is a **pure library**: Showdown protocol text in, then `GameState` snapshots plus uncloaker evidence
 out. No live connection, browser extension or WebSocket client; those come later. The proposal must cover:
@@ -1660,7 +1670,7 @@ committed); real replays may be downloaded (500 per generation, into git-ignored
 and none are committed; rules N1–N4; own spreads from the prior table in player mode; volatiles
 stay free-form; two build steps.
 
-## Task 05, step 1 — spectator-mode parser and evidence rules (built 2026-10-11, awaiting review)
+## Task 05, step 1 — spectator-mode parser and evidence rules (approved 2026-10-11)
 
 Branch `task/05-showdown-parser`. Not merged, not tagged, not pushed. No replay was downloaded
 in this step; that belongs to step 2.
@@ -1768,6 +1778,80 @@ Each of these would have corrupted the posterior silently:
 
 Step 2: player mode, the replay download script, robustness on real replays, and the staleness
 rate. Then the Phase 5 merge and `cp-05`.
+
+## Review of Task 05, step 1 (2026-10-11, reviewer: Claude in claude.ai, on behalf of the user)
+
+Verdict: **APPROVED.** I checked the following on the user's machine:
+
+- **Tests:** 807 of 807 pass on `51775a8` (Linux shell; see R12 for the Windows timing failures).
+- **cp-04:** merged with R6 and R7 included.
+- **The ground-truth approach is the strongest validation in the project so far.** Playing simulated battles with known teams
+  turned "the parser looks right" into "0 false claims in 74,707 checked claims (moves, items, abilities and exclusions)". The four bugs it caught
+  (untyped Hidden Power, the item stolen by Thief, the `[of]` owner, Choice items in Gen 1) are exactly the silent
+  corruptions the review warned about.
+- **Changes to approved work, all accepted:**
+  - `move_matches` for Hidden Power in the Phase 4 code. It's the correct fix, and the reason is documented.
+  - The narrower N1, and N2/N4 closing at the start of the end-of-turn phase. Safer than what I proposed, and well argued.
+  - Ruling nothing out once an item or ability is known.
+
+### Findings
+
+- **R10: explain the remaining 0.5%. This is part of step 2.** The parser makes no false claims, and the battles come from the
+  same generator as the prior. So when the true set loses all probability, it should only be because the set never
+  appeared in the 100,000-team sample. Classify every such Pokémon on the fixtures, and on the 500-per-gen
+  corpus, as:
+  - **(a)** its true set is absent from the prior table, which is coverage and acceptable; or
+  - **(b)** its true set is present but was ruled out, which is a **bug** and must be fixed before `cp-05`.
+  Report (a) per gen. It is the *synthetic floor* of the staleness rate (R8). Real replays will show the floor
+  plus actual drift between the pinned simulator version and the live ladder.
+- **R11: a transformed Pokémon in later phases.** The state keeps a transformed Pokémon's own species, so any
+  damage calculation involving it would be wrong. That matters in Gen 1, with Ditto and Mew. The parser already
+  marks `transform` in volatiles. Carry this into Phase 6: if either active Pokémon is transformed, the orchestrator
+  must return `fallback` for the calculator and threat report, never numbers. Phase 5 needs no change, just a
+  test that the volatile is present on the snapshot.
+- **R12: timing tests fail on the user's PC because of OneDrive load.** It's not a regression. Two actions:
+  - **Apply R9 now:** add `timing` and `slow` pytest markers. The default `pytest` run (and the pre-merge check) runs
+    correctness only, with `-m "not timing"`, and timing is checked separately with `pytest -m timing`, with
+    the results logged here. Keep the thresholds as they are.
+  - **For the user (not Claude Code):** exclude `.venv`, `scripts/**/node_modules` and `data/raw` from OneDrive sync, or
+    move the repository out of OneDrive, for example to `C:\dev\Poketrix`. GitHub is the backup now, so OneDrive adds little.
+    The user decides.
+- **R13: rules that rarely fire.** N4 fired only 5 times, and random players rarely use Trick, Baton Pass or Sleep
+  Talk. For every evidence rule that fired fewer than 30 times in the corpus, add a **hand-written log fixture**
+  (a few lines of protocol text) with the expected evidence, so each rule has a test that doesn't depend on chance.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 4 (do these in order, stopping where marked)
+
+### Order 7: test hygiene (pre-approved, no stop)
+On `task/05-showdown-parser`:
+1. R12/R9: add the `timing` and `slow` markers, set the default `addopts` to `-m "not timing"`, document
+   `pytest -m timing` in `README.md`, and run it once, logging the medians here.
+2. R11: add a test that the transformed volatile is present on the snapshot.
+3. R13: add a hand-written fixture for each rule that fired fewer than 30 times.
+4. Commit. Full suite green and `ruff` clean.
+
+### Order 8: Task 05 step 2. **STOP after it is built, for review before `cp-05`.**
+1. **Player mode.** Parse `|request|` JSON into our full team (`known_set`, with spreads from the prior table as decided) and
+   an `ActionRequest` every turn. **Ground truth again:** have the simulation script also save each player's
+   own stream (with requests). Check that our team, HP, available moves and switches match the
+   simulator exactly on all 500 battles per gen, and that every `ActionRequest` validates against the `GameState`.
+2. **Real replay download.** Already authorised: 500 per gen, into git-ignored `data/raw/`. Be polite:
+   at least 1 second between requests, an honest User-Agent, and backoff on errors. Record the replay ids and date range in a
+   manifest. Commit the script and the manifest, not the replays.
+3. **Robustness on real replays.** Run in lenient mode: 100% of replays parse without an exception.
+   List every unknown message type and anomaly with counts. Then fix them, or document why they're ignored.
+   Sanity checks that need no ground truth:
+   - no Pokémon has more than 4 distinct self-chosen moves;
+   - no Pokémon has two different original items or abilities;
+   - every snapshot validates.
+   Any violation is a parser bug.
+4. **R10 + R8, the staleness rate.** For each gen, report:
+   - the synthetic floor (R10 (a));
+   - the real rate, meaning the share of opponent Pokémon whose evidence contradicts every tier-1 set, with a 95% confidence interval;
+   - the share of those due to a move absent from the species' prior movepool versus an unseen combination of known moves.
+   Then **recommend** one of: no change, a hold-back of x%, a prior rebuild against the current `pokemon-showdown`
+   release, or both. The user decides at review.
+5. Record everything in this tracker, then **stop**. On approval, the merge and `cp-05` follow.
 
 ## Standing rules
 
