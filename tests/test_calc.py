@@ -527,6 +527,7 @@ def test_every_supported_generation_has_an_engine():
 # --------------------------------------------------------------------------- latency
 
 
+@pytest.mark.timing
 def test_four_moves_into_six_targets_under_5ms():
     garchomp = battler("garchomp", nature="jolly", evs={"atk": 252, "spe": 252})
     moves = [DEX4.move(m) for m in ("earthquake", "outrage", "stoneedge", "fireblast")]

@@ -29,4 +29,12 @@ pip install -e ".[dev]"
 pytest
 ```
 
+`pytest` runs every correctness test. The latency budgets are checked separately, because they
+depend on how busy the machine is:
+
+```bash
+pytest -m timing        # latency budgets only
+pytest -m "not slow"    # quick run: skips the corpus evaluations
+```
+
 See `docs/CHECKPOINTS.md` for the branch/tag workflow.

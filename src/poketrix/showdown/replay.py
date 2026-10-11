@@ -41,6 +41,7 @@ class BattleRecord(BaseModel):
     winner: str | None
     ended: bool  # False for a log that stops before `|win|` or `|tie|`
     unknown_message_types: dict[str, int]
+    rule_counts: dict[str, int]  # how often each evidence rule fired
     anomalies: tuple[str, ...]  # evidence the rules did not expect; empty for a clean log
 
 
@@ -82,5 +83,6 @@ def parse_battle(
     return BattleRecord(
         format_id=tracker.format_id, snapshots=tuple(snapshots), winner=tracker.winner,
         ended=tracker.ended, unknown_message_types=dict(tracker.unknown),
+        rule_counts={rule: count for rule, count in tracker.rules.items() if count},
         anomalies=tuple(tracker.anomalies),
     )

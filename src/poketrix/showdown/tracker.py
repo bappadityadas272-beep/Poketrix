@@ -118,6 +118,8 @@ class BattleTracker:
         self.winner: str | None = None
         self.ended = False
         self.unknown: Counter[str] = Counter()
+        # How often each evidence rule fired: shows which rules a corpus actually exercised.
+        self.rules: Counter[str] = Counter()
         self._sides = {slot: _Side() for slot in PlayerSlot}
         self._weather = Weather.NONE
         self._weather_since: int | None = None  # None: started by an ability, open-ended
@@ -274,11 +276,14 @@ class BattleTracker:
             return
         if source.kind == "item":
             if pokemon is not None:
+                self.rules["item: named by a [from] tag"] += 1
                 self._holds(self._mon(pokemon), source.id)
             return
         if event.of is not None and of_owns_ability:
+            self.rules["ability: [from] tag, owner is [of]"] += 1
             self._has_ability(self._mon(event.of), source.id)
         elif pokemon is not None and event.of in (None, pokemon):
+            self.rules["ability: [from] tag, owner is the line's Pokémon"] += 1
             self._has_ability(self._mon(pokemon), source.id)
 
     def _holds(self, mon: _Mon, item_id: str) -> None:
@@ -296,6 +301,11 @@ class BattleTracker:
             mon.ability = ability_id
         mon.book.saw_ability(ability_id)
 
+    def _rule_out_items(self, mon: _Mon, rule: str, *item_ids: str) -> None:
+        before = len(mon.book.ruled_out_items)
+        mon.book.rule_out_items(*item_ids)
+        self.rules[rule] += len(mon.book.ruled_out_items) > before
+
     def _close_attack(self, battle_over: bool = False) -> None:
         """N2: a chosen damaging move hit, and no Life Orb recoil followed."""
         attack, self._attack = self._attack, None
@@ -307,7 +317,7 @@ class BattleTracker:
         no_recoil_possible = attacker.book.may_have("magicguard") or attacker.book.may_have("klutz")
         if attacker.fainted or no_recoil_possible:
             return
-        attacker.book.rule_out_items("lifeorb")
+        self._rule_out_items(attacker, "N2: no Life Orb recoil", "lifeorb")
 
     def _close_turn(self) -> None:
         """N1: on the field all turn below full HP, and no Leftovers-style recovery came."""
@@ -319,7 +329,7 @@ class BattleTracker:
                 continue
             if mon.book.may_have("klutz") or mon.volatiles & _BLOCKS_ITEM_RECOVERY:
                 continue
-            mon.book.rule_out_items(*END_OF_TURN_RECOVERY_ITEMS)
+            self._rule_out_items(mon, "N1: no end-of-turn recovery", *END_OF_TURN_RECOVERY_ITEMS)
 
     def _took_move_damage(self, attack: _Attack) -> None:
         """N4: losing HP to a move excludes the abilities that would have absorbed it."""
@@ -343,7 +353,11 @@ class BattleTracker:
             return
         if defender.book.item_swapped:  # an Iron Ball could have been passed on
             abilities = tuple(a for a in abilities if a != "levitate")
+        before = len(defender.book.ruled_out_abilities)
         defender.book.rule_out_abilities(*abilities)
+        self.rules["N4: damaged through an absorbing ability"] += (
+            len(defender.book.ruled_out_abilities) > before
+        )
 
     # ------------------------------------------------------------------ handlers
 
@@ -383,12 +397,11 @@ class BattleTracker:
     def _on_move(self, event: ev.MoveEvent) -> None:
         self._close_attack()
         mon = self._mon(event.pokemon)
-        chosen = (
-            chose_the_move(event.move_id, event.source)
-            and not mon.transformed and event.move_id != mon.mimicked_move
-        )
+        chosen = self._chose(mon, event)
         if chosen:
+            before = len(mon.book.ruled_out_items)
             mon.book.chose(event.move_id)
+            self.rules["N3: second move in one stay"] += len(mon.book.ruled_out_items) > before
         defender = self._sides[_OTHER[event.pokemon.player]].active
         damaging = False
         try:
@@ -397,6 +410,23 @@ class BattleTracker:
         except UnknownDexEntryError:
             pass
         self._attack = _Attack(mon, defender, event.move_id, chosen and damaging)
+
+    def _chose(self, mon: _Mon, event: ev.MoveEvent) -> bool:
+        """Whether the move is one of the Pokémon's own four, counting why when it is not."""
+        source = event.source
+        if not chose_the_move(event.move_id, source):
+            called = f"called by {source.id}" if source is not None else "Struggle or recharge"
+            self.rules[f"move not revealed: {called}"] += 1
+            return False
+        if mon.transformed:
+            self.rules["move not revealed: used while transformed"] += 1
+            return False
+        if event.move_id == mon.mimicked_move:
+            self.rules["move not revealed: gained through Mimic"] += 1
+            return False
+        if source is not None:
+            self.rules["move revealed: continuation of its own move"] += 1
+        return True
 
     def _on_switch(self, event: ev.SwitchEvent) -> None:
         self._close_attack()
@@ -542,10 +572,12 @@ class BattleTracker:
         if effect.id in _DELAYED_DAMAGE:  # its damage is not from the move in progress
             self._close_attack()
         if effect.kind == "ability":  # `-start|P|ability: Flash Fire`: the ability is P's own
+            self.rules["ability: named as the effect itself"] += 1
             self._has_ability(mon, effect.id)
         if effect.id == "mimic" and event.detail:
             mon.mimicked_move = "".join(c for c in event.detail.lower() if c.isalnum())
         if effect.id in _ABILITY_SWAPPING_MOVES:
+            self.rules[f"ability changed by {effect.id}"] += 1
             mon.book.ability_was_changed()
             if event.of is not None:
                 self._mon(event.of).book.ability_was_changed()
@@ -555,18 +587,28 @@ class BattleTracker:
             mon.volatiles.discard(effect.id)
 
     def _on_item(self, event: ev.ItemEvent) -> None:
-        mon = self._mon(event.pokemon)
+        if event.pokemon is not None:
+            mon = self._mon(event.pokemon)
+        elif event.of is not None:  # Gen 4 Frisk: the item of the Pokémon facing [of]
+            mon = self._sides[_OTHER[event.of.player]].active
+        else:
+            return
+        if mon is None:
+            return
         source = event.source
         if source is not None and source.kind == "ability" and event.of is not None:
             # `-item|Q|X|[from] ability: Frisk|[of] P`: the ability is P's, the item Q's.
+            self.rules["ability: revealed by showing another's item (Frisk)"] += 1
             self._has_ability(self._mon(event.of), source.id)
         if event.lost:
+            self.rules["item: lost (-enditem)"] += 1
             mon.book.saw_item(event.item_id)
             mon.held_item, mon.item_lost = None, True
             return
         swapped = source is not None and source.kind == "move" and source.id in _ITEM_SWAPPING_MOVES
         if swapped:
             # P now holds what the other Pokémon held: that was the *other* one's item.
+            self.rules[f"item swapped by {source.id}"] += 1
             opposing = self._sides[_OTHER[event.pokemon.player]].active
             giver = self._mon(event.of) if event.of else opposing
             if giver is not None and giver is not mon:
@@ -578,17 +620,21 @@ class BattleTracker:
             self._mark_swapped(mon)
             mon.held_item, mon.item_lost = event.item_id, False
             return
+        self.rules["item: announced (-item)"] += 1
+        mon.item_lost = False  # Recycle brings a used item back
         self._holds(mon, event.item_id)
 
     def _on_ability(self, event: ev.AbilityEvent) -> None:
         mon = self._mon(event.pokemon)
         source = event.source
         if event.ability_id is None:  # suppressed
+            self.rules["ability suppressed (-endability)"] += 1
             mon.book.ability_was_changed()
             mon.ability = None
             return
         if source is not None and source.kind == "ability" and source.id == "trace":
             # `-ability|P|A|[from] ability: Trace|[of] Q`: P has Trace and now copies Q's A.
+            self.rules["ability copied by Trace"] += 1
             self._has_ability(mon, "trace")
             if event.of is not None:
                 self._has_ability(self._mon(event.of), event.ability_id)
@@ -596,14 +642,17 @@ class BattleTracker:
             mon.ability = event.ability_id
             return
         if source is not None and source.kind == "move":  # Role Play, Skill Swap, ...
+            self.rules[f"ability changed by {source.id}"] += 1
             mon.book.ability_was_changed()
             mon.ability = event.ability_id
             return
+        self.rules["ability: announced (-ability)"] += 1
         self._has_ability(mon, event.ability_id)
 
     def _on_transform(self, event: ev.TransformEvent) -> None:
         mon = self._mon(event.pokemon)
         self._credit_tag(event, event.pokemon)
+        self.rules["transformed"] += 1
         mon.transformed = True
         mon.volatiles.add("transform")
         mon.book.ability_was_changed()

@@ -198,7 +198,8 @@ def _volatile(phase: str) -> Callable:
 
 def _item(lost: bool) -> Callable:
     return lambda args, tags: ItemEvent(
-        pokemon=parse_ref(args[0]), item_id=to_id(args[1]), lost=lost, **tags
+        pokemon=parse_ref(args[0]) if _is_ref(args[0]) else None, item_id=to_id(args[1]),
+        lost=lost, **tags,
     )
 
 

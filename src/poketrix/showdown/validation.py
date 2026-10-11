@@ -38,6 +38,7 @@ class Report:
     violations: list[str] = field(default_factory=list)
     anomalies: list[str] = field(default_factory=list)
     unknown_message_types: Counter = field(default_factory=Counter)
+    rules: Counter = field(default_factory=Counter)  # evidence rule -> times it fired
 
 
 def load_battles(gen: Generation | int, directory: Path = FIXTURE_DIR) -> list[dict]:
@@ -51,6 +52,7 @@ def check_battle(record: BattleRecord, teams: dict, report: Report, label: str =
     report.turns += record.snapshots[-1].turn
     report.anomalies += [f"{label} {text}" for text in record.anomalies]
     report.unknown_message_types.update(record.unknown_message_types)
+    report.rules.update(record.rule_counts)
     last = record.snapshots[-1]
     for found in last.evidence:
         side = last.state.sides[found.player]
@@ -105,6 +107,7 @@ def validate(gen: Generation | int, directory: Path = FIXTURE_DIR) -> Report:
 
 def main() -> None:
     directory = Path(sys.argv[1]) if sys.argv[1:] else FIXTURE_DIR
+    rules: Counter = Counter()
     print("| Gen | Battles | Turns | Pokémon seen | Moves revealed | Items identified "
           "| Abilities identified | Ruled out | Violations | Anomalies |")
     print("|-----|---------|-------|--------------|----------------|------------------"
@@ -116,6 +119,10 @@ def main() -> None:
               f"| {len(r.violations)} | {len(r.anomalies)} |")
         for line in (r.violations + r.anomalies)[:20]:
             print(f"  ! {line}")
+        rules.update(r.rules)
+    print("\n| Evidence rule | Times fired |\n|---|---|")
+    for rule, count in sorted(rules.items(), key=lambda item: item[1]):
+        print(f"| {rule} | {count} |")
 
 
 if __name__ == "__main__":

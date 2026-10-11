@@ -150,7 +150,7 @@ class VolatileEvent(Event):
 
 
 class ItemEvent(Event):
-    pokemon: PokemonRef
+    pokemon: PokemonRef | None  # None: "a foe of the [of] Pokémon" (Frisk in Gen 4)
     item_id: str
     lost: bool  # `-enditem`: eaten, used up, knocked off or taken
 

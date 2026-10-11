@@ -16,14 +16,14 @@ Last updated: 2026-10-11 (Task 05 step 1 approved; orders 7–8 issued: test hyg
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 731 passing on `main`. On `task/05-showdown-parser`: 807 tests, all passing except the timing tests, which fail intermittently under machine load (see Task 05, step 1). `ruff` is clean.
+Tests: 731 passing on `main`. On `task/05-showdown-parser`: 819 passing in the default run; the 8 timing tests run separately with `pytest -m timing` (see Order 7). `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 7 | Test hygiene: timing/slow markers (R12/R9), transform test (R11), rare-rule fixtures (R13) | No (pre-approved) | **To do** |
-| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **To do** |
+| 7 | Test hygiene: timing/slow markers (R12/R9), transform test (R11), rare-rule fixtures (R13) | No (pre-approved) | **Done** (see the result under Order 7) |
+| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **In progress** |
 
 Full text is in the section "▶ ACTIVE — Orders for Claude Code, batch 4", near the end of this file. Orders 1–6 are done and are
 kept below as history. When an order finishes, set its row here to **Done** with the commit or tag.
@@ -1829,6 +1829,54 @@ On `task/05-showdown-parser`:
 2. R11: add a test that the transformed volatile is present on the snapshot.
 3. R13: add a hand-written fixture for each rule that fired fewer than 30 times.
 4. Commit. Full suite green and `ruff` clean.
+
+**Result (2026-10-12): done.** Default run: 819 passed, 8 deselected (the timing tests); `ruff` clean.
+
+- **R12 / R9.** `timing` and `slow` markers registered in `pyproject.toml`; `addopts` excludes
+  `timing` by default; `README.md` documents `pytest -m timing` and `pytest -m "not slow"`. Eight
+  timing tests are marked. The per-generation report test mixed correctness with a time limit, so
+  it is now two tests. `slow` marks the uncloaker evaluation and the parser's ground-truth run;
+  they still run by default.
+- **`pytest -m timing`, run once as ordered: 4 passed, 4 failed.** The laptop was on battery
+  (50%, Balanced plan) at about 50% CPU load, with the replay download for Order 8 running:
+
+  | Timing test | Best | Median | Limit | Result |
+  |-------------|------|--------|-------|--------|
+  | Gen 4 report, 4 moves × 6 targets | 6.9 ms | 10.4 ms | 5 ms | failed here; passed inside the run above |
+  | Gen 1 report, 30 evaluations | 12.0 ms | 14.6 ms | 8 ms | failed |
+  | Gen 2 report, 30 evaluations | 8.2 ms | 11.4 ms | 8 ms | failed |
+  | Gen 3 report, 30 evaluations | 7.2 ms | 8.6 ms | 8 ms | failed |
+  | Gen 4 report, 30 evaluations | 6.7 ms | 7.9 ms | 8 ms | failed in the run, passed when measured |
+  | Uncloaker update, 42 hypotheses | 0.9 ms | 1.0 ms | 5 ms | passed |
+  | Threat report, 42 hypotheses | 8.5 ms | 10.1 ms | 50 ms | passed |
+  | Parsing, per log line | 0.11 ms | 0.13 ms | 1 ms | passed |
+
+  The same calculator code measured 2.9 ms best and 3.0–3.4 ms median on 2026-10-10 and
+  2026-10-11. Thresholds are unchanged, as ordered. **These numbers should be taken again on AC
+  power with nothing else running** before anyone reads them as the calculator's speed.
+- **R11.** `test_a_transformed_pokemon_is_marked_on_every_snapshot_until_it_leaves` (Gen 1 Ditto):
+  the `transform` volatile is on every snapshot while transformed and gone after the switch.
+- **R13.** The tracker now counts how often each evidence rule fires (`BattleRecord.rule_counts`;
+  `python -m poketrix.showdown.validation` prints the table). Over the 2,000 simulated battles:
+
+  | Evidence rule | Times fired | Hand-written test |
+  |---------------|-------------|-------------------|
+  | N4: damaged through an absorbing ability | 5 | one per ability (Flash Fire, Motor Drive, Volt Absorb, Water Absorb, Levitate), plus the exclusions |
+  | Move called by Mirror Move | 16 | yes, in the Gen 1 spelling |
+  | Move called by Metronome, Copycat, Assist, Me First, Snatch, Magic Coat | 0 each | yes (already there) |
+  | Move called by Nature Power | 0 | added |
+  | Item swapped by Covet | 0 | added |
+  | Item announced by a plain `-item` (Recycle) | 0 | added |
+  | Ability shown through Frisk | 0 | added, in both line shapes |
+  | Ability changed by Role Play, Skill Swap; suppressed (`-endability`) | 0 each | added |
+  | Item swapped by Switcheroo | 44 | added anyway |
+  | Ability copied by Trace | 76 | yes |
+  | Every other rule | 129 to 82,724 | covered by the corpus and by hand |
+
+  Writing them found one real bug: in Gen 4, Frisk's line names no Pokémon
+  (`|-item||Leftovers|[from] ability: Frisk|[of] …`), which would have raised an exception on a
+  real log. It is now read as "the Pokémon facing the Frisk user". A second, smaller fix: an item
+  brought back by Recycle is held again.
 
 ### Order 8: Task 05 step 2. **STOP after it is built, for review before `cp-05`.**
 1. **Player mode.** Parse `|request|` JSON into our full team (`known_set`, with spreads from the prior table as decided) and

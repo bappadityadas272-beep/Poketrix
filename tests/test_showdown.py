@@ -497,6 +497,7 @@ def test_snapshot_is_a_valid_game_state():
 # --------------------------------------------------------------------------- whole battles
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("gen", GENS)
 def test_evidence_is_sound_on_simulated_battles(gen):
     """The acceptance test: against the true teams, the parser never claims anything false."""
@@ -559,6 +560,7 @@ def _key(text):
     return "".join(c for c in text.lower() if c.isalnum())
 
 
+@pytest.mark.timing
 def test_parsing_is_fast():
     log = load_battles(4)[0]["spectator"]
     lines = sum(1 for line in log.splitlines() if line.startswith("|"))
