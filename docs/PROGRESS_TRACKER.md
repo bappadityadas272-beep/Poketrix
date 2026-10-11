@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-11 (Task 05 step 1 approved; orders 7–8 issued: test hygiene, then step 2)
+Last updated: 2026-10-12 (Orders 7 and 8 done; Task 05 step 2 built and awaiting review before `cp-05`)
 
 ## Status at a glance
 
@@ -11,19 +11,19 @@ Last updated: 2026-10-11 (Task 05 step 1 approved; orders 7–8 issued: test hyg
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode) **approved**; step 2 next (Orders 7–8) | `cp-05` pending |
+| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode) **approved**; step 2 (player mode, real replays, staleness) **built, awaiting review** | `cp-05` pending |
 | 6 | Orchestrator + synthesis guardrail | Not started | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 731 passing on `main`. On `task/05-showdown-parser`: 819 passing in the default run; the 8 timing tests run separately with `pytest -m timing` (see Order 7). `ruff` is clean.
+Tests: 731 passing on `main`. On `task/05-showdown-parser`: 840 passing in the default run; the 8 timing tests run separately with `pytest -m timing` (see Order 7). `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
 | 7 | Test hygiene: timing/slow markers (R12/R9), transform test (R11), rare-rule fixtures (R13) | No (pre-approved) | **Done** (see the result under Order 7) |
-| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **In progress** |
+| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **Built, awaiting review** (see the result under Order 8; decisions D1–D5 and the staleness recommendation need an answer) |
 
 Full text is in the section "▶ ACTIVE — Orders for Claude Code, batch 4", near the end of this file. Orders 1–6 are done and are
 kept below as history. When an order finishes, set its row here to **Done** with the commit or tag.
@@ -1900,6 +1900,166 @@ On `task/05-showdown-parser`:
    Then **recommend** one of: no change, a hold-back of x%, a prior rebuild against the current `pokemon-showdown`
    release, or both. The user decides at review.
 5. Record everything in this tracker, then **stop**. On approval, the merge and `cp-05` follow.
+
+**Result (2026-10-12): built, awaiting review.** Default run: 840 passed, 8 deselected (timing);
+`ruff` clean. Nothing is merged; `cp-05` waits for approval.
+
+#### 1. Player mode
+
+- `protocol.py` parses `|request|` into a typed `RequestEvent` (our six Pokémon with exact HP,
+  stats, moves, item and ability; the offered moves; forced switch, wait, trapped).
+- `ownset.py` (new) turns a request Pokémon into a `PokemonSet`. The spread is the first one of
+  that species in the prior table that reproduces the request's stats exactly and, for Hidden
+  Power, its type. If none does, the default spread is used and the battle's `anomalies` say so.
+- `tracker.py`: the first request fixes our team of six and its order. Every request is first
+  compared with what the log had shown (HP, status, fainted, active, held item), any difference
+  is counted in `disagreements`, and then the request is taken over. The resulting
+  `ActionRequest` stays open only until the next event.
+- `replay.py`: a player's log gives one snapshot per decision, with the request in
+  `state.me.request`. A replacement chosen during a turn gets a snapshot of its own. A spectator
+  log behaves exactly as before.
+- `build_battles.mjs` also saves player 1's own stream. The fixtures keep it for the first two
+  battles per generation (fixtures grew from 0.58 MB to 1.6 MB). The update timestamps are now
+  written as 0, so regenerating the fixtures gives identical files.
+
+Ground truth, 500 simulated battles per generation (`node build_battles.mjs 500 DIR 500`, then
+`python -m poketrix.showdown.validation DIR`; the corpus is 307 MB, so it was built outside the
+repo):
+
+| Gen | Battles | Our Pokémon (sets and spreads exact) | Decisions | Forced switches | Request disagreed with the log | Violations |
+|-----|---------|--------------------------------------|-----------|-----------------|--------------------------------|------------|
+| 1 | 500 | 3,000 of 3,000 | 20,679 | 2,175 | 0 | 0 |
+| 2 | 500 | 3,000 of 3,000 | 38,424 | 2,180 | 0 | 0 |
+| 3 | 500 | 3,000 of 3,000 | 25,297 | 2,209 | 0 | 0 |
+| 4 | 500 | 3,000 of 3,000 | 20,082 | 2,323 | 0 | 0 |
+
+"Violations" covers: a set that differs from the true one, a spread that does not reproduce
+the request's stats, a decision without a request, and any difference between the opponent (state
+and evidence) as seen in player mode and as seen by a spectator of the same battle. Every one of
+the 104,482 `ActionRequest`s validated against its `GameState`. The spectator check from step 1
+was run again on the same battles: still 0 false claims.
+
+Offered moves that are not in the active Pokémon's set, all 2,000 battles: Struggle 1,174, Gen 1
+"Fight" (held by a trapping move) 1,695, Recharge 270, while transformed 2,043, while holding a
+Mimic move 303. These are legitimate, which is why the schema check had to change (decision D1
+below).
+
+One bug found by the corpus: from Gen 2 on, Mimic is announced with `-activate`, not `-start`,
+so the `mimic` volatile was only set in Gen 1. It is now set in every generation.
+
+#### 2. Real replays
+
+`scripts/download_replays.py` (standard library only): 1.2 s between requests, the User-Agent
+names this project, growing waits after errors, resumable. 2,000 replays (26 MB) are in
+git-ignored `data/raw/replays/`. Only `id`, `formatid`, `uploadtime`, `rating` and `log` are kept.
+Committed: the script and `data/replays_manifest.json` (replay ids and upload dates, no names).
+
+| Gen | Replays | Uploaded | Ladder games | Tournament or challenge games |
+|-----|---------|----------|--------------|-------------------------------|
+| 1 | 500 | 2026-09-27 to 2026-10-11 | 379 | 121 |
+| 2 | 500 | 2026-07-16 to 2026-10-11 | 135 | 365 |
+| 3 | 500 | 2026-09-28 to 2026-10-11 | 394 | 106 |
+| 4 | 500 | 2026-09-26 to 2026-10-11 | 365 | 135 |
+
+A ladder game is one whose log has a bare `|rated|` line. Tournament and challenge games can run
+under custom rules, so they count for robustness but not for staleness.
+
+#### 3. Robustness (`python -m poketrix.showdown.corpus`)
+
+| Gen | Replays | Raised an exception | Refused as out of scope | Unknown message types | Anomalies, ladder | Anomalies, other games |
+|-----|---------|---------------------|-------------------------|-----------------------|-------------------|------------------------|
+| 1 | 500 | 0 | 0 | 0 | 0 | 0 |
+| 2 | 500 | 0 | 2 | 0 | 0 | 10 |
+| 3 | 500 | 0 | 0 | 0 | 0 | 0 |
+| 4 | 500 | 0 | 0 | 0 | 0 | 0 |
+
+65,822 turns in total. What the first run found, and what was done:
+
+| Finding | Count | Action |
+|---------|-------|--------|
+| Unknown message type `badge` | 60 lines | Ignored on purpose (a ladder decoration) |
+| HP written as a bare `0` or `0 slp` (replays uploaded by a side server, ids starting `rom-`) | 2 replays raised | Fixed: read as fainted |
+| `teamsize` of 8 (tournament games under a custom rule) | 2 replays raised | Now refused with `UnsupportedBattleError`, the same way doubles are (decision D3) |
+| "A fifth own move was seen" | 10, all in Gen 2 tournament games | Not a parser bug: those games run under custom rules (a level-100 Omastar, Glare on Ampharos, five moves). 0 on the ladder |
+| Two original items or abilities on one Pokémon | 0 | |
+| A snapshot that fails validation | 0 | |
+
+#### 4. Staleness (R10 and R8)
+
+Measured on the final evidence of every Pokémon that was sent out, on both sides.
+"Contradicted" means the uncloaker left tier 1: no known set fits everything revealed.
+
+Synthetic floor (R10), 2,000 simulated battles: **0 of 21,235** Pokémon contradicted in any
+generation (95% interval per generation: 0% to 0.08%). So there are no class (b) cases (a known
+set wrongly ruled out), and in this sample no class (a) cases either.
+
+Real ladder games:
+
+| Gen | Pokémon | Contradicted | 95% interval | Move the species never has in the prior | Item the species never holds | Known parts, unseen combination |
+|-----|---------|--------------|--------------|------------------------------------------|------------------------------|---------------------------------|
+| 1 | 3,949 | 0 (0.00%) | 0.00% to 0.10% | 0 | 0 | 0 |
+| 2 | 1,373 | 0 (0.00%) | 0.00% to 0.28% | 0 | 0 | 0 |
+| 3 | 4,161 | 15 (0.36%) | 0.22% to 0.59% | 8 | 0 | 7 |
+| 4 | 3,694 | 12 (0.32%) | 0.19% to 0.57% | 10 | 2 | 0 |
+
+No species was missing from the prior and no ability was unknown. The contradictions are not
+spread evenly; they sit in eight species:
+
+| Gen | Species | Contradicted, of those seen with two or more moves revealed | What was seen |
+|-----|---------|--------------------------------------------------------------|---------------|
+| 3 | Seaking | 8 of 17 | Megahorn, Protect, Toxic, Surf together |
+| 3 | Medicham | 3 of 9 | Bulk Up with Shadow Ball and Substitute |
+| 3 | Primeape | 3 of 13 | Bulk Up, Rock Slide, Substitute |
+| 3 | Aggron | 1 of 7 | Rock Slide, Substitute, Toxic |
+| 4 | Ho-Oh | 4 of 8 | Brave Bird, Recover, Sacred Fire, Substitute |
+| 4 | Charizard | 4 of 7 | Leftovers; Air Slash, Earthquake, Fire Blast, Roost, Will-O-Wisp |
+| 4 | Mightyena | 2 of 11 | Heal Bell, Taunt, Toxic, Super Fang |
+| 4 | Jirachi | 1 of 5 | Calm Mind, Psychic, Signal Beam, Thunderbolt |
+
+About half of the appearances of Seaking, Ho-Oh and Charizard contradict the prior. That
+pattern is what a changed set list looks like, not random noise: the live server evidently
+gives these species sets that `pokemon-showdown` 0.11.11 (the npm release the prior was sampled
+from) does not have. This was not confirmed against the server's current data files.
+
+For reference, tournament and challenge games: Gen 1 1 of 1,250, Gen 2 18 of 3,815, Gen 3 3 of
+1,162, Gen 4 8 of 1,521. The Gen 2 cases are the custom-rule games described above.
+
+Limits of this measurement: the Gen 2 ladder sample is small (135 games); a Pokémon that
+revealed nothing cannot contradict anything, so the rate per Pokémon with two or more moves
+shown is higher than the table's; and it is one two-week sample.
+
+**Recommendation (the user decides):**
+
+- **No hold-back.** The rate is 0% to 0.4%, and when it happens the uncloaker already falls
+  back to tiers 2 and 3 and reports `fallback`; it never raises. A flat hold-back would take
+  probability from every species to cover eight.
+- **Rebuild the prior from Showdown's current source** (a git checkout of the live data, not
+  the npm release) and run this measurement again as the acceptance check. The staleness is
+  specific to a few species, which a rebuild fixes and a hold-back does not. It needs a
+  download of roughly 200 MB, so it needs your go-ahead, and it can be its own small order
+  after `cp-05`.
+- Keep `python -m poketrix.showdown.corpus` as the check to repeat whenever the prior is rebuilt.
+
+#### Decisions taken while building, for your review
+
+| # | Decision | Why | Alternative |
+|---|----------|-----|-------------|
+| D1 | `SideState` now accepts offered moves outside the known set in three cases: `struggle`, `recharge`, `fight` (`FORCED_MOVES`); while the active Pokémon is transformed or holds a Mimic move (`BORROWS_MOVES`); and an untyped `hiddenpower` for a typed one | The simulator really offers these (5,485 times in the corpus); the old check rejected a true request | Keep the strict check and drop such requests |
+| D2 | In player mode a snapshot is a decision, so a forced switch during a turn has its own snapshot with the same turn number | The guardrail needs the legal actions at every decision, not once per turn | One snapshot per turn, forced switches not represented |
+| D3 | Teams larger than six are refused with `UnsupportedBattleError` | Only custom-rule games have them; the schema's limit of six stays true for every supported format | Raise the schema limit to Showdown's maximum of 24 |
+| D4 | The showdown package now imports the prior (`uncloak`) and the stat formula (`calc`) to build our own sets | "Spreads from the prior table", as decided in P-decisions; the formula is not duplicated | Pass the prior in from the caller only (the tracker already accepts it as an argument) |
+| D5 | Only ladder games count towards staleness | Custom rules say nothing about the prior | Count every game (Gen 2 would read 0.35%) |
+
+Open points for Phase 6:
+
+- In the simulator's stream a request arrives after the update that ends with `|turn|`. The
+  tracker applies lines in the order it is given, so the live client must pass them in arrival
+  order.
+- `maybeTrapped` (Shadow Tag or Arena Trap not yet revealed) is not represented: the switches
+  are listed as legal and the simulator may reject one.
+- R11 still stands: no damage for a transformed Pokémon.
+- The timing tests were not run again; the machine was busy with the download and the corpus
+  builds. They should be taken on AC power with nothing else running.
 
 ## Standing rules
 

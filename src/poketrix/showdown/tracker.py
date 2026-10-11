@@ -3,6 +3,11 @@
 The tracker is the only place battle state changes. It keeps more than a `GameState` holds:
 nicknames, the item a Pokémon holds now as opposed to the one it started with, and the short
 memory the evidence rules need (what happened since the last move, during this turn).
+
+A player's own log also carries `|request|` lines. The first one names the player's side and
+its six full sets; every one gives exact HP and the legal actions. A request is checked
+against what the log had shown before it is taken over (`disagreements`), and stays open only
+until the battle moves on.
 """
 
 from collections import Counter
@@ -12,6 +17,7 @@ from dataclasses import dataclass, field
 from poketrix.dex import Dex, UnknownDexEntryError
 from poketrix.schemas import (
     HAZARDS,
+    ActionRequest,
     BattlePokemon,
     BoostStat,
     FieldState,
@@ -19,14 +25,17 @@ from poketrix.schemas import (
     Generation,
     MoveCategory,
     PlayerSlot,
+    PokemonSet,
     SetEvidence,
     SideCondition,
     SideState,
     Species,
     Status,
     Weather,
+    move_matches,
     rules_for,
 )
+from poketrix.uncloak import SetPrior, load_prior
 
 from . import events as ev
 from .evidence import (
@@ -35,7 +44,9 @@ from .evidence import (
     EvidenceBook,
     chose_the_move,
 )
+from .ownset import own_set
 
+_MAX_TEAM_SIZE = 6
 _STANDARD_DURATION = 5  # turns of weather, screens, Trick Room and Gravity without an item
 _ITEM_SWAPPING_MOVES = frozenset({"trick", "switcheroo", "thief", "covet"})
 _ABILITY_SWAPPING_MOVES = frozenset({"skillswap", "roleplay", "worryseed", "gastroacid"})
@@ -56,6 +67,10 @@ _SIDE_CONDITIONS = {condition.value: condition for condition in SideCondition}
 _OTHER = {PlayerSlot.P1: PlayerSlot.P2, PlayerSlot.P2: PlayerSlot.P1}
 
 
+class UnsupportedBattleError(ValueError):
+    """The log is of a kind of battle outside the scope: doubles, or teams of more than six."""
+
+
 @dataclass
 class _Mon:
     nickname: str
@@ -73,6 +88,8 @@ class _Mon:
     ability: str | None = None  # its ability now, as far as the log has shown
     transformed: bool = False
     mimicked_move: str | None = None
+    known_set: PokemonSet | None = None  # our own Pokémon, from the first request
+    hp_exact: tuple[int, int] | None = None  # (current, maximum): our own side only
     # Memory for the "no Leftovers recovery" rule, reset every turn. `seen_at_full_hp` is
     # cleared when a move leaves the Pokémon damaged, which always happens before the
     # end-of-turn effects; later end-of-turn damage does not clear it, because that can come
@@ -111,8 +128,15 @@ class _Attack:
 
 
 class BattleTracker:
-    def __init__(self) -> None:
+    def __init__(self, priors: Callable[[Generation], SetPrior] = load_prior) -> None:
         self.gen: Generation | None = None
+        self.player: PlayerSlot | None = None  # whose requests the log carries; None: a spectator
+        # What a request said differently from what the log had shown, by kind. Empty when the
+        # tracker follows the battle correctly.
+        self.disagreements: Counter[str] = Counter()
+        self._priors = priors
+        self._request: ActionRequest | None = None
+        self._notes: list[str] = []
         self.format_id = ""
         self.turn = 0
         self.winner: str | None = None
@@ -152,6 +176,7 @@ class BattleTracker:
             ev.ItemEvent: self._on_item,
             ev.AbilityEvent: self._on_ability,
             ev.TransformEvent: self._on_transform,
+            ev.RequestEvent: self._on_request,
             ev.TagEvent: self._on_tag,
             ev.UnknownEvent: lambda event: self.unknown.update([event.kind]),
         }
@@ -161,12 +186,13 @@ class BattleTracker:
     def apply(self, event: ev.Event) -> None:
         if not isinstance(event, ev.ItemEvent):
             self._swapping.clear()
+        self._request = None  # the battle has moved on: the last request is answered
         self._handlers[type(event)](event)
 
     @property
     def anomalies(self) -> list[str]:
         """Things the evidence rules did not expect (a fifth own move, two original items)."""
-        return [
+        return self._notes + [
             f"{slot.value} {mon.nickname}: {text}"
             for slot, side in self._sides.items()
             for mon in side.mons
@@ -183,11 +209,14 @@ class BattleTracker:
     def set_species_id(self, slot: PlayerSlot, index: int) -> str:
         return self._sides[slot].mons[index].set_species_id
 
-    def state(self, perspective: PlayerSlot = PlayerSlot.P1) -> GameState:
-        """A validated snapshot. Needs both leads on the field."""
+    def state(self, perspective: PlayerSlot | None = None) -> GameState:
+        """A validated snapshot. Needs both leads on the field.
+
+        The perspective defaults to the player whose requests the log carries, else to p1.
+        """
         return GameState(
             generation=self.gen, format_id=self.format_id, turn=self.turn,
-            perspective=perspective,
+            perspective=perspective or self.player or PlayerSlot.P1,
             sides={slot: self._side_state(slot) for slot in PlayerSlot},
             field=self._field_state(),
         )
@@ -222,13 +251,19 @@ class BattleTracker:
             player=slot, name=side.name or None, team_size=max(side.team_size, len(side.mons)),
             team=[self._battle_pokemon(mon) for mon in side.mons],
             active_index=None if side.active is None else side.mons.index(side.active),
-            conditions=conditions,
+            conditions=conditions, request=self._request if slot is self.player else None,
         )
 
     def _battle_pokemon(self, mon: _Mon) -> BattlePokemon:
         rules = rules_for(self.gen)
+        known_set = mon.known_set
+        if known_set is not None and known_set.species.id != mon.species.id:
+            # A forme change (Castform in the weather): the set is now that forme's.
+            known_set = known_set.model_copy(update={"species": mon.species})
+        current, maximum = mon.hp_exact or (None, None)
         return BattlePokemon(
-            species=mon.species, level=mon.level,
+            species=mon.species, level=mon.level, known_set=known_set,
+            hp_current=0 if mon.fainted and maximum else current, hp_max=maximum,
             hp_fraction=0.0 if mon.fainted else mon.hp_fraction,
             status=None if mon.fainted else mon.status,
             boosts={stat: stage for stat, stage in mon.boosts.items() if stage},
@@ -365,6 +400,8 @@ class BattleTracker:
         if event.key == "player":
             self._sides[event.player].name = event.value
         elif event.key == "teamsize":
+            if int(event.value) > _MAX_TEAM_SIZE:  # a custom rule; never the ladder
+                raise UnsupportedBattleError(f"teams of {event.value} are not supported")
             self._sides[event.player].team_size = int(event.value)
         elif event.key == "gen":
             self.gen = Generation(int(event.value))
@@ -373,7 +410,9 @@ class BattleTracker:
         elif event.key == "tier":
             self.format_id = "".join(c for c in event.value.lower() if c.isalnum())
         elif event.key == "gametype" and event.value != "singles":
-            raise ValueError(f"only singles battles are supported, not {event.value!r}")
+            raise UnsupportedBattleError(
+                f"only singles battles are supported, not {event.value!r}"
+            )
 
     def _on_turn(self, event: ev.TurnEvent) -> None:
         self._close_attack()
@@ -465,6 +504,9 @@ class BattleTracker:
         mon.fainted, mon.hp_fraction, mon.status = True, 0.0, None
 
     def _set_hp(self, mon: _Mon, hp: ev.Hp) -> None:
+        if mon.known_set is not None:  # our own side: the numbers are exact
+            maximum = hp.maximum or (mon.hp_exact[1] if mon.hp_exact else None)
+            mon.hp_exact = None if maximum is None else (hp.current, maximum)
         mon.hp_fraction = hp.fraction
         mon.fainted = hp.fainted
         mon.status = None if hp.fainted else hp.status
@@ -576,6 +618,7 @@ class BattleTracker:
             self._has_ability(mon, effect.id)
         if effect.id == "mimic" and event.detail:
             mon.mimicked_move = "".join(c for c in event.detail.lower() if c.isalnum())
+            mon.volatiles.add("mimic")  # Gen 1 says `-start`, later generations `-activate`
         if effect.id in _ABILITY_SWAPPING_MOVES:
             self.rules[f"ability changed by {effect.id}"] += 1
             mon.book.ability_was_changed()
@@ -659,3 +702,72 @@ class BattleTracker:
 
     def _on_tag(self, event: ev.TagEvent) -> None:
         self._credit_tag(event, event.pokemon)
+
+    # ------------------------------------------------------------------ player mode
+
+    def _on_request(self, event: ev.RequestEvent) -> None:
+        side = self._sides[event.player]
+        if self.player is None:
+            self.player = event.player
+            self._meet_own_team(side, event.team)
+        for seen in event.team:
+            self._take_over(side, self._mon(seen.pokemon), seen)
+        self._request = self._action_request(side, event)
+
+    def _meet_own_team(self, side: _Side, team: tuple[ev.RequestPokemon, ...]) -> None:
+        """The first request: all six of our Pokémon, in an order that then stays fixed."""
+        prior = self._priors(self.gen)
+        sent_out = {mon.nickname: mon for mon in side.mons}
+        side.mons = []
+        for seen in team:
+            species = self._species(seen.species_name)
+            mon = sent_out.get(seen.pokemon.name)
+            if mon is None:
+                book = EvidenceBook(species, self._item_ids)
+                mon = _Mon(seen.pokemon.name, species, species.id, seen.level, book)
+            mon.known_set, exact = own_set(seen, species, self._dex, prior)
+            if not exact:
+                self._notes.append(
+                    f"{self.player.value} {mon.nickname}: no known spread gives the stats "
+                    "in the request; the default spread is used"
+                )
+            mon.held_item, mon.ability = mon.known_set.item, mon.known_set.ability
+            mon.hp_exact = None if seen.hp.maximum is None else (seen.hp.current, seen.hp.maximum)
+            side.mons.append(mon)
+
+    def _take_over(self, side: _Side, mon: _Mon, seen: ev.RequestPokemon) -> None:
+        """Count where the log's story differs from the request, then believe the request."""
+        shown = {
+            "fainted": (mon.fainted, seen.hp.fainted),
+            "hp": (mon.hp_exact, mon.hp_exact if seen.hp.fainted else
+                   (seen.hp.current, seen.hp.maximum)),
+            "status": (mon.status, seen.hp.status),
+            "active": (side.active is mon, seen.active),
+            "item": (None if mon.item_lost else mon.held_item, seen.item_id),
+        }
+        self.disagreements.update(kind for kind, (ours, theirs) in shown.items() if ours != theirs)
+        self._set_hp(mon, seen.hp)
+        mon.held_item = seen.item_id
+        mon.item_lost = seen.item_id is None and mon.known_set.item is not None
+        if seen.active:
+            side.active = mon
+
+    def _action_request(self, side: _Side, event: ev.RequestEvent) -> ActionRequest | None:
+        if event.wait:
+            return None
+        bench = [
+            index for index, mon in enumerate(side.mons)
+            if mon is not side.active and not mon.fainted
+        ]
+        if event.force_switch:
+            return ActionRequest(available_switches=bench, force_switch=True)
+        active = side.active
+        # A transformed Pokémon is offered its target's moves, not its own.
+        own = () if active.transformed else active.known_set.moves
+        moves = [
+            next((move for move in own if move_matches(offered.move_id, move)), offered.move_id)
+            for offered in event.moves if not offered.disabled
+        ]
+        return ActionRequest(
+            available_moves=moves, available_switches=[] if event.trapped else bench
+        )

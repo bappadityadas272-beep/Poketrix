@@ -4,13 +4,16 @@
 //   cd scripts/randbats && npm install
 //   npm run build-battles                 the committed fixtures: 10 battles per generation
 //   node build_battles.mjs 500 raw        500 per generation into data/raw/battles/ (git-ignored)
+//   node build_battles.mjs 500 DIR 500    into DIR, keeping player 1's own log for all 500
 //
 // The parser's evidence rules are checked against these, because here the truth is known:
 // a move the parser calls "revealed" must be in the true set, a ruled-out item must not be the
 // true item, and so on. Random players do not play like people, but they exercise the mechanics.
 //
-// One file per generation: {"source": {...}, "battles": [{seed, teams, spectator}]}.
-// `spectator` is the public log, which is what a saved replay contains.
+// One file per generation: {"source": {...}, "battles": [{seed, teams, spectator, player?}]}.
+// `spectator` is the public log, which is what a saved replay contains. `player` is what player 1
+// receives: the same battle with exact HP for its own side and a `|request|` before every
+// decision. It is about ten times larger, so only the first few battles keep it by default.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -26,6 +29,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const ALL_GENS = [1, 2, 3, 4];
 const FIXTURE_BATTLES = 10;
+const FIXTURE_PLAYER_LOGS = 2;
 const BASE_SEED = 20261201;
 const { version: SIMULATOR_VERSION } = JSON.parse(
   readFileSync(join(HERE, 'node_modules', 'pokemon-showdown', 'package.json'), 'utf8'),
@@ -43,13 +47,29 @@ const truth = (gen, pokemon) => ({
   ability: gen >= 3 ? toID(pokemon.ability) : null,
 });
 
+// The simulator stamps each update with the wall clock; a fixed value keeps the files reproducible.
+const withoutClock = (log) => log.replace(/^\|t:\|\d+$/gm, '|t:|0');
+
 async function collect(stream) {
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
   return chunks.join('\n');
 }
 
-async function play(gen, index) {
+// Lets a player read its stream while we keep a copy of everything it received.
+function recorded(stream, chunks) {
+  return {
+    write: (data) => stream.write(data),
+    async *[Symbol.asyncIterator]() {
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+        yield chunk;
+      }
+    },
+  };
+}
+
+async function play(gen, index, keepPlayerLog) {
   const format = `gen${gen}randombattle`;
   const seed = [BASE_SEED, gen, index & 0xffff, index >>> 16];
   const teams = {
@@ -58,7 +78,8 @@ async function play(gen, index) {
   };
   const streams = getPlayerStreams(new BattleStream());
   const spectator = collect(streams.spectator);
-  const p1 = new RandomPlayerAI(streams.p1, { seed: [seed[1], seed[2], seed[3], 11] });
+  const playerLog = [];
+  const p1 = new RandomPlayerAI(recorded(streams.p1, playerLog), { seed: [seed[1], seed[2], seed[3], 11] });
   const p2 = new RandomPlayerAI(streams.p2, { seed: [seed[1], seed[2], seed[3], 22] });
   void p1.start();
   void p2.start();
@@ -67,19 +88,23 @@ async function play(gen, index) {
       `>player p1 ${JSON.stringify({ name: 'Player One', team: Teams.pack(teams.p1) })}\n` +
       `>player p2 ${JSON.stringify({ name: 'Player Two', team: Teams.pack(teams.p2) })}`,
   );
-  return {
+  const battle = {
     seed,
     teams: { p1: teams.p1.map((p) => truth(gen, p)), p2: teams.p2.map((p) => truth(gen, p)) },
-    spectator: await spectator,
+    spectator: withoutClock(await spectator),
   };
+  if (keepPlayerLog) battle.player = withoutClock(playerLog.join('\n'));
+  return battle;
 }
 
 const count = Number(process.argv[2]) || FIXTURE_BATTLES;
-const outDir = process.argv[3] === 'raw' ? join(ROOT, 'data', 'raw', 'battles') : join(ROOT, 'tests', 'fixtures');
+const target = process.argv[3];
+const outDir = target === 'raw' ? join(ROOT, 'data', 'raw', 'battles') : target || join(ROOT, 'tests', 'fixtures');
+const playerLogs = process.argv[4] === undefined ? FIXTURE_PLAYER_LOGS : Number(process.argv[4]);
 mkdirSync(outDir, { recursive: true });
 for (const gen of ALL_GENS) {
   const battles = [];
-  for (let index = 0; index < count; index++) battles.push(await play(gen, index));
+  for (let index = 0; index < count; index++) battles.push(await play(gen, index, index < playerLogs));
   const source = { simulator: 'pokemon-showdown', version: SIMULATOR_VERSION, format: `gen${gen}randombattle`, base_seed: BASE_SEED };
   const path = join(outDir, `battles_gen${gen}.json`);
   writeFileSync(path, `{"source":${JSON.stringify(source)},"battles":[\n${battles.map((b) => JSON.stringify(b)).join(',\n')}\n]}\n`);

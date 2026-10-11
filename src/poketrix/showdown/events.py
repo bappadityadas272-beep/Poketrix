@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from poketrix.schemas import BoostStat, PlayerSlot, Status, Weather
+from poketrix.schemas import BoostStat, PlayerSlot, Stat, Status, Weather
 
 
 class _Frozen(BaseModel):
@@ -163,6 +163,39 @@ class AbilityEvent(Event):
 class TransformEvent(Event):
     pokemon: PokemonRef
     target: PokemonRef
+
+
+class RequestMove(_Frozen):
+    """One choice the request offers the active Pokémon. Hidden Power comes without its type;
+    `recharge`, `fight` (Gen 1, while trapped) and `struggle` are choices that are in no set."""
+
+    move_id: str
+    disabled: bool = False
+
+
+class RequestPokemon(_Frozen):
+    """One of our own Pokémon as the simulator describes it: exact HP, stats and set."""
+
+    pokemon: PokemonRef
+    species_name: str
+    level: int
+    hp: Hp
+    active: bool
+    stats: dict[Stat, int]  # every stat but HP, before stat stages
+    moves: tuple[str, ...]  # as sent: `return102`, `hiddenpowerice`
+    item_id: str | None  # what it holds now
+    ability_id: str | None  # the ability it started with
+
+
+class RequestEvent(Event):
+    """`|request|`: the simulator asks one player for a decision and shows them their team."""
+
+    player: PlayerSlot
+    team: tuple[RequestPokemon, ...]
+    moves: tuple[RequestMove, ...] = ()
+    force_switch: bool = False
+    wait: bool = False  # nothing to decide: the opponent is choosing a replacement
+    trapped: bool = False
 
 
 class TagEvent(Event):

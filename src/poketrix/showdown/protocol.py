@@ -3,6 +3,7 @@
 Reference: sim/SIM-PROTOCOL.md of pokemon-showdown 0.11.11. Only Gens 1-4 singles are in scope.
 """
 
+import json
 import re
 from collections.abc import Callable, Sequence
 
@@ -24,6 +25,9 @@ from .events import (
     ItemEvent,
     MoveEvent,
     PokemonRef,
+    RequestEvent,
+    RequestMove,
+    RequestPokemon,
     SetupEvent,
     SideEvent,
     StatusEvent,
@@ -41,7 +45,7 @@ from .events import (
 IGNORED = frozenset({
     "", "t:", "rule", "rated", "c", "c:", "chat", "j", "J", "join", "l", "L", "leave", "n", "N",
     "name", "raw", "html", "uhtml", "uhtmlchange", "inactive", "inactiveoff", "debug", "seed",
-    "error", "bigerror", "init", "title", "deinit", "request", "sentchoice", "split",
+    "error", "bigerror", "init", "title", "deinit", "sentchoice", "split", "badge",
     "-crit", "-supereffective", "-resisted", "-miss", "-notarget", "-hint", "-message", "-anim",
     "-hitcount", "-nothing", "-center", "-combine", "-waiting", "-ohko", "-prepare",
     "-mustrecharge", "message", "clearpoke", "poke", "teampreview", "swap", "replace",
@@ -56,6 +60,8 @@ _WEATHER = {
 }
 _EFFECT_KINDS = ("move", "item", "ability")
 _FLAG = re.compile(r"\[[a-z]+\]")
+_REQUEST = "|request|"
+_NO_ABILITY = "noability"  # what a request says in Gens 1-2
 
 
 def parse_ref(text: str) -> PokemonRef:
@@ -72,7 +78,7 @@ def parse_effect(text: str) -> Effect:
 
 def parse_hp(text: str) -> Hp:
     condition, _, status = text.partition(" ")
-    if status == "fnt":
+    if status == "fnt" or condition == "0":  # some servers write a bare `0`, or `0 slp`
         return Hp(current=0, maximum=None, fainted=True)
     current, _, maximum = condition.partition("/")
     return Hp(current=int(current), maximum=int(maximum), status=Status(status) if status else None)
@@ -216,6 +222,37 @@ def _tag_only(kind: str) -> Callable:
     return parse
 
 
+def _request_pokemon(data: dict) -> RequestPokemon:
+    species, level = parse_details(data["details"])
+    ability = to_id(data.get("baseAbility") or "")
+    return RequestPokemon(
+        pokemon=parse_ref(data["ident"]), species_name=species, level=level,
+        hp=parse_hp(data["condition"]), active=bool(data.get("active")), stats=data["stats"],
+        moves=tuple(data["moves"]), item_id=to_id(data.get("item") or "") or None,
+        ability_id=None if ability in ("", _NO_ABILITY) else ability,
+    )
+
+
+def parse_request(payload: str) -> RequestEvent | None:
+    """The JSON of a `|request|` line. An empty request (sent when a battle ends) is `None`."""
+    data = json.loads(payload) if payload.strip() else None
+    if not data:
+        return None
+    side = data["side"]
+    active = (data.get("active") or [{}])[0]
+    return RequestEvent(
+        player=PlayerSlot(side["id"]),
+        team=tuple(_request_pokemon(pokemon) for pokemon in side["pokemon"]),
+        moves=tuple(
+            RequestMove(move_id=move["id"], disabled=bool(move.get("disabled")))
+            for move in active.get("moves", ())
+        ),
+        force_switch=any(data.get("forceSwitch") or ()),
+        wait=bool(data.get("wait") or data.get("teamPreview")),
+        trapped=bool(active.get("trapped")),
+    )
+
+
 _PARSERS: dict[str, Callable[[list[str], dict], Event]] = {
     **{key: _setup(key) for key in ("player", "teamsize", "gen", "tier", "gametype", "start")},
     "turn": lambda args, tags: TurnEvent(number=int(args[0])),
@@ -270,6 +307,8 @@ def parse_line(line: str) -> Event | None:
     text). A message type the parser has never heard of becomes an `UnknownEvent`."""
     if not line.startswith("|"):
         return None
+    if line.startswith(_REQUEST):  # JSON: not split into arguments
+        return parse_request(line[len(_REQUEST):])
     kind, *args = line[1:].split("|")
     if kind in IGNORED:
         return None

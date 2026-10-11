@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-04` merged; Task 05 step 1 built on `task/05-showdown-parser`, awaiting review (2026-10-11)
+## Current state — `cp-04` merged; Task 05 steps 1–2 built on `task/05-showdown-parser`, step 2 awaiting review (2026-10-12)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -56,7 +56,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 | cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
 | cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
-| (cp-05 pending) | `src/poketrix/showdown/` — battle-log parser, spectator mode, evidence rules; 807 tests total |
+| (cp-05 pending) | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 840 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -139,10 +139,25 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
   `schemas.move_matches` / `moves_fit`, never with `==` or set inclusion.
 - `BattlePokemon.revealed_item` is what the Pokémon holds now; `SetEvidence.item` is what it
   started with. They differ after Trick or Thief.
+- **Player mode** is automatic when the log has `|request|` lines: our six Pokémon get a
+  `known_set` (`ownset.py`: the spread from the prior that reproduces the request's stats) and
+  exact HP, and there is one snapshot per decision with `state.me.request` set, including forced
+  switches. Each request is checked against the log before it is believed;
+  `BattleRecord.request_disagreements` must stay empty.
+- A request may offer moves outside the known set: `schemas.FORCED_MOVES` (`struggle`,
+  `recharge`, Gen 1 `fight`), and anything while the `transform` or `mimic` volatile is set.
+- Doubles and teams of more than six raise `UnsupportedBattleError`.
+- `python -m poketrix.showdown.corpus [replay dir] [battle dir]` measures robustness on real
+  replays (`python scripts/download_replays.py`, into git-ignored `data/raw/replays/`; never
+  commit replays, they hold usernames and chat) and the staleness of the prior. Only ladder
+  games (a bare `|rated|` line) count towards staleness. Run it again after any prior rebuild.
+- The player-mode ground truth needs player logs: `node build_battles.mjs 500 DIR 500` (307 MB;
+  keep DIR outside OneDrive), then pass DIR to the validation.
 
 Carried forward (from the Task 04 review):
-- No probability is held back for unseen sets yet (R8). Phase 5 measures, on real replays, how
-  often revealed evidence contradicts every known set; that staleness rate decides it.
+- No probability is held back for unseen sets yet (R8). Measured on 2,000 real replays: 0% on
+  the Gen 1–2 ladder, about 0.3% in Gens 3–4, concentrated in eight species. Recommended: no
+  hold-back, rebuild the prior from Showdown's current source. The user has not decided yet.
 - If the test suite keeps slowing down, give the evaluation tests a `slow` marker (R9); the
   full suite stays mandatory before every merge.
 

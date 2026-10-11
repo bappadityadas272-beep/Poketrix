@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from poketrix.schemas import GameState, PlayerSlot, SetEvidence
 from poketrix.schemas.pokemon import ShowdownId
 
-from .events import Event, TurnEvent
+from .events import Event, RequestEvent, TurnEvent
 from .protocol import parse_line
 from .tracker import BattleTracker
 
@@ -22,7 +22,11 @@ class PokemonEvidence(BaseModel):
 
 
 class TurnSnapshot(BaseModel):
-    """The battle as it stands when a turn begins (or, for the last one, when it ended)."""
+    """The battle as it stands when a turn begins (or, for the last one, when it ended).
+
+    A player's own log gives one snapshot per decision instead: each carries the request in
+    `state.me.request`, and a replacement chosen during a turn has a snapshot of its own.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -40,12 +44,14 @@ class BattleRecord(BaseModel):
     snapshots: tuple[TurnSnapshot, ...]
     winner: str | None
     ended: bool  # False for a log that stops before `|win|` or `|tie|`
+    player: PlayerSlot | None  # whose requests the log carries; None for a spectator log
+    request_disagreements: dict[str, int]  # where a request contradicted the log; empty if sound
     unknown_message_types: dict[str, int]
     rule_counts: dict[str, int]  # how often each evidence rule fired
     anomalies: tuple[str, ...]  # evidence the rules did not expect; empty for a clean log
 
 
-def _snapshot(tracker: BattleTracker, perspective: PlayerSlot, events: list[Event],
+def _snapshot(tracker: BattleTracker, perspective: PlayerSlot | None, events: list[Event],
               final: bool = False) -> TurnSnapshot:
     evidence = tuple(
         PokemonEvidence(
@@ -61,28 +67,45 @@ def _snapshot(tracker: BattleTracker, perspective: PlayerSlot, events: list[Even
 
 
 def parse_battle(
-    text: str, perspective: PlayerSlot = PlayerSlot.P1, strict: bool = False
+    text: str, perspective: PlayerSlot | None = None, strict: bool = False
 ) -> BattleRecord:
-    """Parse a spectator log (a saved replay). `strict` makes an unknown message type an error."""
+    """Parse a spectator log (a saved replay) or a player's own log, which also has requests.
+
+    The perspective defaults to the player whose requests the log carries, else to p1.
+    `strict` makes an unknown message type an error.
+    """
     tracker = BattleTracker()
     snapshots: list[TurnSnapshot] = []
     pending: list[Event] = []
+    turn_began = False  # a turn line was read and its snapshot is still to be taken
+
+    def take(final: bool = False) -> None:
+        nonlocal pending, turn_began
+        snapshots.append(_snapshot(tracker, perspective, pending, final))
+        pending, turn_began = [], False
+
     for line in text.splitlines():
         event = parse_line(line)
         if event is None:
             continue
+        asks = isinstance(event, RequestEvent) and not event.wait
+        if turn_began and not asks:  # no request follows the turn line: a spectator's log
+            take()
         tracker.apply(event)
         pending.append(event)
         if isinstance(event, TurnEvent):
-            snapshots.append(_snapshot(tracker, perspective, pending))
-            pending = []
+            turn_began = True
+        elif asks and tracker.turn:
+            take()
     if strict and tracker.unknown:
         raise ValueError(f"unknown message types: {dict(tracker.unknown)}")
-    if tracker.turn and pending:
-        snapshots.append(_snapshot(tracker, perspective, pending, final=True))
+    if tracker.turn and (pending or turn_began):
+        take(final=not turn_began)
     return BattleRecord(
         format_id=tracker.format_id, snapshots=tuple(snapshots), winner=tracker.winner,
-        ended=tracker.ended, unknown_message_types=dict(tracker.unknown),
+        ended=tracker.ended, player=tracker.player,
+        request_disagreements=dict(tracker.disagreements),
+        unknown_message_types=dict(tracker.unknown),
         rule_counts={rule: count for rule, count in tracker.rules.items() if count},
         anomalies=tuple(tracker.anomalies),
     )
