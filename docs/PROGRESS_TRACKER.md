@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-12 (Orders 7 and 8 done; Task 05 step 2 built and awaiting review before `cp-05`)
+Last updated: 2026-10-12 (Task 05 step 2 approved; D1–D5 and R8 decided; orders 9–11 issued)
 
 ## Status at a glance
 
@@ -11,22 +11,25 @@ Last updated: 2026-10-12 (Orders 7 and 8 done; Task 05 step 2 built and awaiting
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Step 1 (spectator mode) **approved**; step 2 (player mode, real replays, staleness) **built, awaiting review** | `cp-05` pending |
-| 6 | Orchestrator + synthesis guardrail | Not started | |
+| 5 | Showdown battle-log parser → `GameState` | Steps 1 and 2 **approved**; merge + tag (Order 9), then the prior rebuild (Order 10) | `cp-05`, `cp-05b` |
+| 6 | Orchestrator + decision policy + synthesis guardrail | Next: design proposal (Order 11) | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 731 passing on `main`. On `task/05-showdown-parser`: 840 passing in the default run; the 8 timing tests run separately with `pytest -m timing` (see Order 7). `ruff` is clean.
+Tests: 731 passing on `main`. On `task/05-showdown-parser` (`76c6328`): 840 passing in the default run plus 8 of 8 with `pytest -m timing` (reviewer run, 2026-10-12). `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 7 | Test hygiene: timing/slow markers (R12/R9), transform test (R11), rare-rule fixtures (R13) | No (pre-approved) | **Done** (see the result under Order 7) |
-| 8 | Task 05 step 2: player mode, real replays, R10 + R8 staleness rate | **Yes**, before `cp-05` | **Built, awaiting review** (see the result under Order 8; decisions D1–D5 and the staleness recommendation need an answer) |
+| 7 | Test hygiene (R9/R11/R12/R13) | No | **Done** (`e8c35e9`) |
+| 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
+| 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **To do** |
+| 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **To do** |
+| 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **To do** |
 
-Full text is in the section "▶ ACTIVE — Orders for Claude Code, batch 4", near the end of this file. Orders 1–6 are done and are
-kept below as history. When an order finishes, set its row here to **Done** with the commit or tag.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 5", near the end of this file. The optional
+"Advice for Claude Code" section follows the orders; apply an item whenever it fits the work you are doing.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -1820,9 +1823,9 @@ Verdict: **APPROVED.** I checked the following on the user's machine:
   Talk. For every evidence rule that fired fewer than 30 times in the corpus, add a **hand-written log fixture**
   (a few lines of protocol text) with the expected evidence, so each rule has a test that doesn't depend on chance.
 
-## ▶ ACTIVE — Orders for Claude Code, batch 4 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 4 (do these in order, stopping where marked)
 
-### Order 7: test hygiene (pre-approved, no stop)
+### ✅ DONE — Order 7: test hygiene (pre-approved, no stop) _(→ e8c35e9)_
 On `task/05-showdown-parser`:
 1. R12/R9: add the `timing` and `slow` markers, set the default `addopts` to `-m "not timing"`, document
    `pytest -m timing` in `README.md`, and run it once, logging the medians here.
@@ -1878,7 +1881,7 @@ On `task/05-showdown-parser`:
   real log. It is now read as "the Pokémon facing the Frisk user". A second, smaller fix: an item
   brought back by Recycle is held again.
 
-### Order 8: Task 05 step 2. **STOP after it is built, for review before `cp-05`.**
+### ✅ DONE — Order 8: Task 05 step 2. **STOP after it is built, for review before `cp-05`.** _(→ c3fe27d, 76c6328; approved 2026-10-12)_
 1. **Player mode.** Parse `|request|` JSON into our full team (`known_set`, with spreads from the prior table as decided) and
    an `ActionRequest` every turn. **Ground truth again:** have the simulation script also save each player's
    own stream (with requests). Check that our team, HP, available moves and switches match the
@@ -2060,6 +2063,127 @@ Open points for Phase 6:
 - R11 still stands: no damage for a transformed Pokémon.
 - The timing tests were not run again; the machine was busy with the download and the corpus
   builds. They should be taken on AC power with nothing else running.
+
+## Review of Task 05, step 2 (2026-10-12, reviewer: Claude in claude.ai, on behalf of the user)
+
+Verdict: **APPROVED.** I checked the following on the user's machine (`76c6328`):
+
+- **Tests:** the default run gives 840 passed with 8 timing tests deselected. The timing tests then passed on their own
+  (8 of 8, run from the reviewer's shell). Order 7 is confirmed done.
+- **Player mode against ground truth:**
+  - 12,000 of 12,000 sets and spreads are exact.
+  - 104,482 of 104,482 requests validate.
+  - No request disagreed with the log.
+  - Still 0 false evidence claims.
+- **Real replays:** 2,000 of 2,000 parse, apart from 2 games with 8-Pokémon teams, which are refused by name. Two real-world bugs were found
+  and fixed: the bare `0` fainted HP, and Mimic's `-activate` from Gen 2 on.
+- **R10 is closed:** the synthetic floor is 0 of 21,235, so the evidence rules never kill a set the prior knows. The 0.5% gap
+  seen in step 1 was prior coverage, not a bug.
+- **R8 is measured:**
+  - Gens 1–2 show 0 contradictions.
+  - Gens 3–4 show 0.3–0.4%, concentrated in 8 species. Seaking, Ho-Oh and Charizard are each about 50% contradicted.
+  - That's a changed set list, not noise.
+
+### Decisions
+
+| # | Decision | Ruling |
+|---|----------|--------|
+| R8 | Hold back probability or rebuild | **No hold-back. Rebuild the prior from the current source**, as Order 10. The pattern is per-species drift, which only a rebuild fixes. |
+| D1 | Accept offered moves outside the known set (`FORCED_MOVES`, `BORROWS_MOVES`, untyped Hidden Power) | **Accepted.** Each of the three cases must have its own test with a real request, and `BORROWS_MOVES` applies to the active Pokémon only. If either is missing, add it in Order 9. |
+| D2 | One snapshot per decision in player mode | **Accepted, with an addition:** add `decision_index` (0 = the turn's main choice, 1+ = forced switches within the turn), so `(turn, decision_index)` uniquely identifies a decision. Phase 7 needs that as the row key for training data. Do it in Order 9. |
+| D3 | Refuse teams over six | **Accepted.** |
+| D4 | The showdown package imports `uncloak` (the prior) and `calc` (the stat formula) | **Accepted for `calc`**, because the stat formula is a pure function and duplicating it would be worse. **For the prior**, see Advice A1 (optional). |
+| D5 | Staleness counts ladder games only | **Accepted.** Keep reporting both numbers, as now. |
+
+### Carried into Phase 6 (from Order 8's open points and earlier reviews)
+
+- **R5:** an unsupported move gives a fallback or unknown result, never zero damage.
+- **R11:** a transformed Pokémon gets no damage numbers.
+- **Line order:** the live client must pass lines in arrival order, with the request after the `|turn|` update.
+- **New, R14 (trapping):** `maybeTrapped` is not represented. The orchestrator must estimate the trapping risk from the
+  uncloaker: P(the opponent's ability is Shadow Tag or Arena Trap, or Magnet Pull against our Steel-type), using the ability marginal.
+  Any switch recommendation must carry that risk, and when it is ≥ 0.5 the policy must also give a move alternative.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 5 (do these in order, stopping where marked)
+
+### Order 9: finish and close Phase 5 (pre-approved, no stop if green)
+1. On `task/05-showdown-parser`, add `decision_index` (D2), and check the D1 tests (three cases, active Pokémon only).
+2. Run the full suite and `ruff`, then `pytest -m timing`, with AC power and the machine idle if possible. Log the medians.
+3. Run `git switch main`, then `git merge --no-ff task/05-showdown-parser`, then `git tag -a cp-05 -m "Showdown parser: spectator + player mode, evidence, staleness"`.
+   Then update `docs/CHECKPOINTS.md` and `README.md`, mark Phase 5 as done in the status table, and run `git push origin main --tags`.
+4. Mark Order 9 as Done in "▶ Current orders".
+
+### Order 10: rebuild the prior from Showdown's current source (R8)
+The user is told about the download size in the reviewer's message. If the user said no, skip this order and mark it "Skipped".
+Branch: `task/05b-prior-rebuild`.
+1. **Smallest source first:** check whether an npm release of `pokemon-showdown` newer than 0.11.11 contains the
+   updated Gen 1–4 Random Battle data. If it does, pin that release. If not, make a shallow git checkout (`--depth 1`) at a
+   **recorded commit SHA**. Keep the checkout **outside the repository and outside OneDrive**, for example
+   `%LOCALAPPDATA%\poketrix-cache\pokemon-showdown`. Commit only the rebuilt prior tables and the manifest
+   (source, version or SHA, date).
+2. Rebuild the prior with the same sampling (100,000 teams per gen, the same seeds policy).
+3. **Acceptance checks.** All must pass to merge without a stop:
+   - The Task 04 evaluation targets are still met (calibration error ≤ 0.02, true set non-zero on tier 1 in ≥ 99.9%,
+     log-loss as agreed).
+   - The synthetic floor (R10) is still 0 on the simulator corpus. Regenerate the corpus with the new source.
+   - The real-replay staleness (ladder games) has **dropped**, both overall and for the 8 named species.
+     Report a before/after table per gen and per species.
+   - Prior tables stay ≤ 5 MB in total, and the full suite plus `ruff` are green.
+4. If all checks pass: merge `--no-ff`, tag `cp-05b`, log it, push, and mark the order Done. If any fails: **stop** and
+   report the table instead.
+
+### Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.**
+Branch: `task/06-orchestrator`. Write the proposal as a new section in this tracker. Phase 6 turns one player-mode
+snapshot into one validated, explained recommendation within 500 ms. Cover:
+
+1. **Pipeline.** A plain state machine, not LangGraph (per the architecture doc): `GameState` + evidence →
+   uncloaker (every revealed opponent) → threat report (their active against our active and each of our switch-ins) →
+   our move evaluations against their active, weighted by the posterior → policy → `Recommendation` → text. Every
+   stage returns a `SubsystemResult` and has a timeout. A single `TurnReport` schema carries all intermediate results,
+   so every number in the text can be traced to its source.
+2. **Decision policy v0, deterministic with no ML.** Propose a transparent rule set and say exactly how ties are broken.
+   For example: who moves first (speed, priority, Trick Room, paralysis); our best move by the chance we KO before they KO us; when to
+   switch (their `p_ko_best_move` is high, we can't win the exchange, and a switch-in takes the least expected
+   damage); R14 trapping risk; R5 and R11 fallbacks. The opponent's action prior is a **heuristic placeholder**
+   (`ActionPrediction` with `model_version="heuristic-0"`) until Phase 7 replaces it.
+3. **Evaluation, the headline result of the project so far.** Have the policy play real games in the pinned simulator
+   through a Python ↔ Node bridge that streams the battle protocol. Measure the win rate over at least 500 games per gen against:
+   - (a) the simulator's random player;
+   - (b) a "max damage" baseline that always picks the highest expected-damage move.
+   Report 95% intervals. Propose the bridge design, and keep the bridge a dev tool, not part of the runtime.
+4. **Synthesis.** v0 uses **templates, no LLM**: the headline and explanation are generated from `TurnReport` fields. The
+   `Recommendation` guardrail checks legality and `allowed_numbers`. An LLM writer is an optional later step behind the
+   same interface, with the API key from an environment variable and never in the repo. Recommend when it should be added, if at all.
+5. **Latency.** p50 and p95 per decision on the corpus, against the 500 ms budget, with a per-stage breakdown. Profile Gen 1
+   multi-hit cases (R4) here.
+6. **Out of scope:** the live client and overlay (Phase 8), XGBoost (Phase 7), doubles.
+7. **Decisions to ask the user,** with a recommendation for each: the policy rules, the evaluation opponents and game counts,
+   the bridge design, templates versus an LLM, and the `TurnReport` shape.
+
+Then **stop** for the user's approval before writing any code.
+
+## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
+
+These are suggestions, not orders. None needs a separate stop. Apply one when you are already working nearby, and
+log it as "A#: applied in <commit>". Skip any that you judge not worth it, with a one-line reason.
+
+- **A1: depend on an interface for the prior (D4).** `showdown` should not import `uncloak` at module level. Take
+  the prior through the existing argument (or a small `SetSource` protocol), so parsing never loads the prior tables
+  unless player mode needs them. That's dependency inversion, per the SOLID standing rule. It's cheap, and best done in Order 9.
+- **A2: continuous integration.** Add a GitHub Actions workflow running `pip install -e ".[dev]"`, `ruff check src tests` and
+  `pytest -m "not timing"` on push and on pull requests, with Python 3.10 and 3.12. No secrets are needed. It catches a broken
+  `main` even when the local machine is busy. It's a small, separate commit, any time.
+- **A3: a demo command.** `python -m poketrix analyze <replay.log> [--turn N]` prints the parsed state, the posterior
+  for the opponent's active Pokémon and its threat report. It's useful for manual checks in Phase 6 and for showing the project.
+  Best done in Order 11's build, or alongside it.
+- **A4: README quickstart.** Five lines (install, run the tests, the demo command) and the results table (oracle match,
+  calibration, 0 false claims, staleness). This is a portfolio project, so the README is its front page.
+- **A5: keep heavy data out of OneDrive.** `data/raw/` now holds 2,000 replays, and the rebuild adds a source checkout.
+  Put caches under `%LOCALAPPDATA%\poketrix-cache` (configurable with an environment variable). The user may also move
+  the repository to `C:\dev\Poketrix`; mention it again if timing tests fail.
+- **A6: tracker length.** This file is over 2,000 lines. Don't split it without the user's OK (the standing rule
+  is "avoid new documentation"), but keep each new section short. Results go in tables, and prose only for what a table
+  can't say.
 
 ## Standing rules
 
