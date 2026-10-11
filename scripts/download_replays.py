@@ -102,7 +102,7 @@ def main() -> None:
         "downloaded": datetime.now(tz=timezone.utc).date().isoformat(),
         "generations": {str(gen): download(gen, count) for gen in GENERATIONS},
     }
-    MANIFEST.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
+    MANIFEST.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8", newline="\n")
     total = sum(g["replays"] for g in manifest["generations"].values())
     print(f"{total} replays in {OUT_DIR}; manifest: {MANIFEST}")
 
