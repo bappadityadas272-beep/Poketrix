@@ -25,7 +25,7 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 | 9 | `decision_index`, merge `cp-05` | No | **Done** (`cp-05`) |
 | 10 | Rebuild the prior (R8) | No | **Done** (`cp-05b`; staleness 27 → 0) |
 | 11 | Phase 6 design proposal | Yes | **Done, decided** (see "Review of the Task 06 proposal") |
-| 12 | Phase 6 build steps (a) and (b), plus A2 CI and A3 demo | **Yes**, after (b) | **To do** |
+| 12 | Phase 6 build steps (a) and (b), plus A2 CI and A3 demo | **Yes**, after (b) | **Built, awaiting review** (findings F1–F3 under Order 12 need a decision) |
 | 13 | Phase 6 step (c): bridge + win rates, then `cp-06` | **Yes**, with the win rates | **To do** (after 12 is approved) |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 6". The Advice section (A1–A6) still applies.
@@ -2443,6 +2443,114 @@ Branch: `task/06-orchestrator`.
    - replaying a player-mode fixture produces a legal recommendation at every decision;
    - latency p50 and p95 per stage on the corpus sample (timing marker).
 4. Write it up in this tracker: what was built, the latency table, and three example outputs of `analyze` on real turns. Then **stop**.
+
+**Result (2026-10-13): steps (a) and (b) built, awaiting review.** 870 passed in the default run
+(847 + 23 new); `ruff` clean. Nothing is merged. **Two findings (F1, F2) need a decision before
+Order 13.**
+
+#### 0. CI (A2) and R15
+
+- A2 applied in `8f6109f`: `.github/workflows/tests.yml` runs `ruff` and
+  `pytest -m "not timing"` on Python 3.10 and 3.12, on push and pull requests. The first run on
+  `task/06-orchestrator` was green.
+- **R15 holds in every generation.** `sim/side.ts` (commit `942cda7`), `chooseSwitch`, lines
+  984–997: a switch chosen while `pokemon.trapped` goes to `emitChoiceError` (lines 527–537),
+  which sends `|error|[Unavailable choice] Can't switch: The active Pokémon is trapped`, sets
+  `trapped: true` in the request and sends that request again. The turn is not spent. The Gen 1–4
+  mods do not override it. `maybeTrapped` is set by Shadow Tag, Arena Trap and Magnet Pull
+  (`data/abilities.ts` 197–207, 2518–2527, 4158–4167; Gen 3 versions in
+  `data/mods/gen3/abilities.ts`), so it only arises in Gens 3–4. **Outcome:** the policy does
+  not lower a switch's score for the trapping risk; the text states it.
+
+#### 1. What was built
+
+| Part | Where | What it does |
+|------|-------|--------------|
+| Contracts | `schemas/outputs.py` | `TurnReport` with each stage's `SubsystemResult`, the scored options and `numbers`; `MoveOutlook`, `OptionScore`, `Decision` and the stage payloads |
+| Maths added | `calc/order.py`, `calc/report.py` | `acts_first_chance` (priority, then each generation's own Speed rule, Trick Room) and `expected_hp_share` (capped at the HP that is left) |
+| Threat report | `uncloak/threat.py` | New `expected_best_share`: the D of the formula, computed per set like `p_ko_best_move` |
+| Stages 1–5 | `advisor/stages.py` | Uncloak, threats, offence, order, opponent heuristic-0. Each checks its deadline between units of work and records its numbers |
+| Policy | `advisor/policy.py` | The Q1 score, with the formula and a worked example in the docstring; hazards exact; R14 risk from the ability posterior; provisional Q2 constants |
+| Writer | `advisor/writer.py` | `Writer` protocol and `TemplateWriter`. A sentence appears only when its numbers exist |
+| Runner | `advisor/pipeline.py` | `TurnAdvisor.advise(snapshot) -> TurnReport`: the stage table, `Deadline`, the fallback ladder, the guardrail check |
+| A3 | `python -m poketrix analyze <log> [--turn N]` | Prints the state, their likely sets, their threats, our scored options and the advice |
+| Latency tool | `python -m poketrix.advisor.latency [dir] [n]` | The table below |
+
+Fallback paths, each with a test: R5 (an unsupported move stays unscored, never 0; a lower bound
+is said in the text), R11 (transformed: `fallback`, no damage numbers, highest-power legal move),
+a stage timing out part-way (keeps what it finished), a whole turn out of time, no posterior,
+their Pokémon fainted, a single legal action.
+
+Provisional Q2 constants (to be tuned on the tuning seeds only): recovery = the HP restored as a
+share of the HP left (Rest × 0.5); a hazard not yet up = 0.06 per benched opponent; sleep 0.60,
+paralysis 0.30, Toxic 0.30, poison 0.15, each × accuracy.
+
+#### 2. Latency
+
+2,000 decisions per generation sampled from the 500-battle corpus (seed 20261301). The laptop was
+on battery at about 10% load, so not the AC-power run.
+
+| Gen | Total p50 | Total p95 | Max | Threats p50 / p95 | Offence p50 / p95 | Other stages p95 | Decisions not `ok` |
+|-----|-----------|-----------|-----|-------------------|-------------------|------------------|--------------------|
+| 1 | 13.6 ms | 38.8 ms | 131 ms | 7.0 / 22.3 | 4.8 / 14.6 | each under 1.5 | 59 `fallback` |
+| 2 | 9.4 ms | 26.7 ms | 179 ms | 4.7 / 16.2 | 3.2 / 9.3 | each under 1.5 | 47 `fallback` |
+| 3 | 8.9 ms | 31.9 ms | 173 ms | 4.4 / 18.4 | 3.2 / 11.2 | each under 1.5 | 26 `fallback` |
+| 4 | 9.1 ms | 30.9 ms | 176 ms | 4.4 / 18.2 | 3.3 / 11.9 | each under 1.5 | 45 `fallback` |
+
+p95 is 6 to 9 times under the 250 ms target; no `timeout` and no `error` in 8,000 decisions. The
+`fallback` decisions are transformed Pokémon, a fainted target, and evidence outside the prior.
+`pytest -m timing`: the 4 new tests pass; of the 8 older ones, the Gen 1 and Gen 2 calculator
+tests missed their 8 ms limit on battery (8.5 and 8.8 ms) and the other 6 passed.
+
+#### 3. Three real turns (`analyze`, fixture battle 0)
+
+**Gen 4, turn 9: a knock-out is taken.**
+```
+ours:   Pinsir L84     theirs: Ho-Oh L72
+  +1.377  stoneedge      removes 80%, knock-out 80%
+  +0.641  closecombat    removes 30%, knock-out 0%
+  +0.109  switch to Zapdos   takes 38%, knocked out 0%
+Stone Edge: 80% to knock out Ho-Oh
+Stone Edge removes about 80% of Ho-Oh's remaining HP on average and knocks it out 80% of the
+time. Pinsir acts first 100% of the time. If Ho-Oh attacks, it takes about 82% of Pinsir's
+remaining HP and knocks it out 6% of the time.
+```
+
+**Gen 3, turn 6: the best trade.**
+```
+ours:   Hitmontop L87 71%     theirs: Primeape L84 41% def+1
+  +0.399  hiddenpowerghost   removes 68%, knock-out 6%
+  +0.378  switch to Zapdos   takes 36%, knocked out 2%
+Hidden Power Ghost: about 68% of Primeape's remaining HP
+Hidden Power Ghost removes about 68% ... Hitmontop acts first 0% of the time. If Primeape
+attacks, it takes about 51% of Hitmontop's remaining HP and knocks it out 10% of the time.
+```
+
+**Gen 4, turn 2: a switch that I think is wrong (finding F1).**
+```
+ours:   Porygon-Z L79 64% spa+2     theirs: Qwilfish L83 100%
+  +0.845  switch to Golduck   takes 46%, knocked out 29%
+  +0.718  triattack           removes 100%, knock-out 100%
+Switch to Golduck: Porygon-Z is knocked out 33% of the time if it stays
+```
+
+#### 4. Findings that need a decision before Order 13
+
+| # | Finding | Evidence | Recommendation |
+|---|---------|----------|----------------|
+| F1 | **The approved score gives up certain knock-outs for a switch.** A knock-out now and a knock-out next turn by the switch-in are worth the same, and staying is charged a second exchange against a Pokémon that will already be gone (`M(active)`) | On the 8 fixture battles the engine advises a voluntary switch in 114 of 337 decisions (34%), and in 16 of them a move with a 90% or higher knock-out chance was available. The turn above: Tri Attack knocks out 100% of the time and scores 0.718; the switch scores 0.845 | Two changes to the formula, both still closed-form: (1) the second exchange counts only if their Pokémon is still there, `P(both alive)·M(active)`; (2) a tempo factor γ on every second-exchange term (start at 0.5, tune on the tuning seeds). I did not make them: they change the approved Q1 formula |
+| F2 | **A move's cost to ourselves is not scored.** Explosion and Self-Destruct count as a free knock-out; recoil and Hyper Beam's recharge turn cost nothing | Gen 2 fixture battle, turns 3–7: "Explosion: 100% to knock out Piloswine" at every decision | Charge a self-KO move the HP share it gives up (1.0), in `trade`. Leave recoil and recharge for later and list them under known limits |
+| F3 | The opponent heuristic makes `a` small against sets full of status moves (0.19 in the turn above), so taking a hit looks nearly free | Same turn: half of Qwilfish's likely moves are hazards or status | Leave it for Order 13: `a` is one of the placeholders, and F1's fix removes most of its effect. Report its effect in the tuning runs |
+
+Other notes: the order stage takes their move to have no priority (known limit); a switch-in's
+status moves are not judged; `maybeTrapped` itself is still not in the request schema, so the
+risk comes from the posterior alone.
+
+Deviations from the proposal, small: `TurnReport` holds the `SubsystemResult` of each stage as
+typed fields (`uncloak`, `threats`, `offence`, `order`, `opponent`, `policy`) rather than a list;
+a stage with nothing to work on (R11, a fainted target, no posterior) returns `fallback` with an
+empty payload and the reason, not `error`; the writer receives a `Brief` (decision, numbers,
+caveats), because a `TurnReport` cannot exist before its recommendation.
 
 ### Order 13: Phase 6 step (c) — the bridge and the win rates. **STOP with the results.** (Start only after Order 12 is approved.)
 1. The bridge (Q5 + R15), the two players, paired games (E1), and the seed ranges written here first (E2).

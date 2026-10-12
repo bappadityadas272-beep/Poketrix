@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-05b` merged (Phases 0–5 done, prior rebuilt); Phase 6 proposal on `task/06-orchestrator` awaits the user's decisions (2026-10-13)
+## Current state — `cp-05b` merged; Phase 6 steps (a) and (b) built on `task/06-orchestrator`, awaiting review; step (c), the win rates, is Order 13 (2026-10-13)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -163,6 +163,25 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
   games (a bare `|rated|` line) count towards staleness. Run it again after any prior rebuild.
 - The player-mode ground truth needs player logs: `node build_battles.mjs 500 DIR 500` (307 MB;
   keep DIR outside OneDrive), then pass DIR to the validation.
+
+Turn engine (`from poketrix.advisor import TurnAdvisor`), on `task/06-orchestrator`, not merged:
+- `TurnAdvisor().advise(snapshot) -> TurnReport` for a player-mode snapshot (one with a request).
+  A plain state machine in `pipeline.py`: uncloak → threats → offence → order → opponent →
+  policy → write. Each stage returns a `SubsystemResult` inside its own budget
+  (`STAGE_BUDGET_MS`) and the turn's 500 ms; a `Deadline` is checked between units of work,
+  there are no threads. There is always a legal answer: the last resort is `policy.by_power`.
+- `stages.py` only joins existing layers; maths stays in `calc` (`acts_first_chance`,
+  `expected_hp_share`) and in the threat report (`expected_best_share`). The policy's formula
+  and its approximations are documented in `policy.py`'s docstring: keep them in step.
+- `TurnReport.numbers` is the only source of `allowed_numbers`. A writer may print nothing
+  else: `writer.py` quotes through `_Quotes`, and a test reads every number out of the text.
+- A stage with nothing to work on (transformed Pokémon, fainted target, no posterior) returns
+  `fallback` with an empty payload and the reason; `error` means it raised.
+- R15: a switch refused by a trapping ability is re-asked and costs no turn (`sim/side.ts`), so
+  the trapping risk is stated in the text and never scored.
+- `python -m poketrix analyze <log> [--turn N]` prints a turn; `python -m
+  poketrix.advisor.latency [dir] [n]` prints the per-stage latency table.
+- CI: `.github/workflows/tests.yml` runs `ruff` and `pytest -m "not timing"` on 3.10 and 3.12.
 
 Carried forward (from the Task 04 review):
 - R8 is decided: no probability is held back for unseen sets. The prior is rebuilt from

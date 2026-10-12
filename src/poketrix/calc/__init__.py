@@ -8,7 +8,8 @@ from .gen3 import Gen3Engine
 from .gen4 import Gen4Engine
 from .hidden_power import hidden_power
 from .ko import ko_chances
-from .report import build_report, evaluate_move
+from .order import acts_first_chance
+from .report import build_report, evaluate_move, expected_hp_share
 from .stats import apply_stage, apply_stage_classic, compute_stats
 from .typechart import effectiveness
 
@@ -21,6 +22,7 @@ __all__ = [
     "DamageEngine",
     "DamageResult",
     "Outcome",
+    "acts_first_chance",
     "apply_stage",
     "apply_stage_classic",
     "build_report",
@@ -28,6 +30,7 @@ __all__ = [
     "effectiveness",
     "engine_for",
     "evaluate_move",
+    "expected_hp_share",
     "hidden_power",
     "ko_chances",
     "register_engine",

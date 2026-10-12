@@ -223,6 +223,10 @@ class ThreatReport(Strict):
     # of its best move, weighted by how likely the set is. Moves are correlated inside a set,
     # so this cannot be read off the per-move figures.
     p_ko_best_move: float = Field(default=0.0, ge=0.0, le=1.0)
+    # "If they attack, how much of our remaining HP goes?": for each possible set the expected
+    # share its hardest-hitting move removes (accuracy included, never more than what is left),
+    # weighted the same way.
+    expected_best_share: float = Field(default=0.0, ge=0.0, le=1.0)
     # True when a possible move could not be evaluated and so counted as 0 above: the real
     # chance is then at least `p_ko_best_move`, never less.
     ko_lower_bound: bool = False
@@ -304,3 +308,98 @@ class Recommendation(Strict):
                 if key not in allowed or abs(allowed[key] - val) > 1e-9:
                     raise ValueError(f"cited number {key}={val} was not produced by a subsystem")
         return self
+
+
+# --------------------------------------------------------------------------- turn engine
+
+
+class OpponentSets(Strict):
+    """Stage 1: what each opposing Pokémon still alive may be, by its index in their team."""
+
+    posteriors: dict[int, SetPosterior] = Field(default_factory=dict)
+
+
+class ThreatSheet(Strict):
+    """Stage 2: their active Pokémon against ours, by the index of our Pokémon in our team."""
+
+    by_target: dict[int, ThreatReport] = Field(default_factory=dict)
+
+
+class MoveOutlook(Strict):
+    """What one of our moves does to their active Pokémon, averaged over its possible sets.
+
+    Shares are of the HP the target has left, so a certain knock-out is 1 whatever was left.
+    """
+
+    move_id: ShowdownId
+    expected_share: float | None = Field(default=None, ge=0.0, le=1.0)  # accuracy included
+    ko_probability: float | None = Field(default=None, ge=0.0, le=1.0)  # this turn
+    # Set when the calculator cannot evaluate the move: it is then unknown, never "no damage".
+    unsupported_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _unsupported_has_no_numbers(self) -> Self:
+        numbers = (self.expected_share, self.ko_probability)
+        if self.unsupported_reason is not None and any(n is not None for n in numbers):
+            raise ValueError("an unsupported move carries no damage numbers")
+        return self
+
+
+class OffenceSheet(Strict):
+    """Stage 3: the moves of our active Pokémon and of each switch-in, by index in our team."""
+
+    by_attacker: dict[int, list[MoveOutlook]] = Field(default_factory=dict)
+
+
+class OrderSheet(Strict):
+    """Stage 4: the chance that we act before them, per Pokémon of ours and move."""
+
+    first: dict[int, dict[ShowdownId, float]] = Field(default_factory=dict)
+
+
+class OptionScore(Strict):
+    """One legal action and what the policy made of it. `score` is None when it was not scored."""
+
+    action: ActionKind
+    move_id: ShowdownId | None = None
+    switch_index: int | None = None
+    score: float | None = None
+
+
+class Decision(Strict):
+    """Stage 6: every legal option, best first, and why the first one was chosen."""
+
+    options: list[OptionScore] = Field(min_length=1)
+    reason: Literal[
+        "knockout", "best_trade", "utility", "switch", "forced_switch", "only_option", "limited"
+    ]
+    alternative_move: ShowdownId | None = None  # the best move, given beside a switch
+
+    @property
+    def choice(self) -> OptionScore:
+        return self.options[0]
+
+
+class TurnReport(Strict):
+    """Everything one decision was based on: each stage's result, the choice and its wording.
+
+    `numbers` is the single register of what the stages computed, under stable keys
+    (`our.icebeam.ko`, `their.p_ko`). It is exactly what the guardrail accepts as
+    `allowed_numbers`, so any number in the text can be traced to the stage that produced it.
+    """
+
+    generation: Generation
+    turn: int = Field(ge=1)
+    decision_index: int = Field(ge=0)
+    # OK when every stage answered in full; otherwise the weakest stage's status.
+    status: SubsystemStatus
+    latency_ms: float = Field(ge=0)
+    uncloak: SubsystemResult[OpponentSets]
+    threats: SubsystemResult[ThreatSheet]
+    offence: SubsystemResult[OffenceSheet]
+    order: SubsystemResult[OrderSheet]
+    opponent: SubsystemResult[ActionPrediction]
+    policy: SubsystemResult[Decision]
+    recommendation: Recommendation
+    numbers: dict[str, float] = Field(default_factory=dict)
+    trap_risk: float = Field(default=0.0, ge=0.0, le=1.0)  # P(a switch is refused), R14
