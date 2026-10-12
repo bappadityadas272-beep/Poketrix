@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — checkpoint `cp-04`: Phase 4 (set uncloaker) complete (2026-10-11)
+## Current state — `cp-05` merged (Phases 0–5 done); next: prior rebuild (Order 10), then the Phase 6 proposal (2026-10-13)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -56,6 +56,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-03b | Gen 4 items, abilities, multi-hit and remaining moves; item data; 352 tests total |
 | cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
 | cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
+| cp-05 | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 846 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -125,9 +126,44 @@ Uncloak (`from poketrix.uncloak import Uncloaker, load_prior`):
 - `python -m poketrix.uncloak.evaluation` prints the held-out metrics; `tests/test_uncloak.py`
   asserts the agreed targets. Paste a new table into the tracker when the prior is rebuilt.
 
+Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, parse_line`):
+- `parse_battle(log_text)` returns a `BattleRecord`: one `TurnSnapshot` per turn with a
+  validated `GameState`, a `SetEvidence` per revealed Pokémon, and the turn's typed events.
+- `protocol.py` only parses lines; `tracker.py` is the only place state changes;
+  `evidence.py` holds the rules for what counts as revealed or ruled out. Keep them apart.
+- **Evidence rules must stay conservative**: when a line could mean two things, conclude
+  nothing. Any change to them must keep `python -m poketrix.showdown.validation` at zero
+  false claims, on the fixtures and on the on-demand corpus (`cd scripts/randbats &&
+  node build_battles.mjs 500 raw`, then pass `data/raw/battles` to the validation).
+- A battle log shows "Hidden Power" without its type: compare moves with
+  `schemas.move_matches` / `moves_fit`, never with `==` or set inclusion.
+- `BattlePokemon.revealed_item` is what the Pokémon holds now; `SetEvidence.item` is what it
+  started with. They differ after Trick or Thief.
+- **Player mode** is automatic when the log has `|request|` lines: our six Pokémon get a
+  `known_set` (`ownset.py`: the spread from the prior that reproduces the request's stats) and
+  exact HP, and there is one snapshot per decision with `state.me.request` set, including forced
+  switches. `(turn, decision_index)` identifies a snapshot (0 = the turn's main choice); Phase 7
+  uses it as the row key. The spreads come through the `SetSource` protocol, so importing the
+  parser does not load the prior. Each request is checked against the log before it is believed;
+  `BattleRecord.request_disagreements` must stay empty.
+- A request may offer moves outside the known set: `schemas.FORCED_MOVES` (`struggle`,
+  `recharge`, Gen 1 `fight`), and anything while the `transform` or `mimic` volatile is set.
+- Doubles and teams of more than six raise `UnsupportedBattleError`.
+- `python -m poketrix.showdown.corpus [replay dir] [battle dir]` measures robustness on real
+  replays (`python scripts/download_replays.py`, into git-ignored `data/raw/replays/`; never
+  commit replays, they hold usernames and chat) and the staleness of the prior. Only ladder
+  games (a bare `|rated|` line) count towards staleness. Run it again after any prior rebuild.
+- The player-mode ground truth needs player logs: `node build_battles.mjs 500 DIR 500` (307 MB;
+  keep DIR outside OneDrive), then pass DIR to the validation.
+
 Carried forward (from the Task 04 review):
-- No probability is held back for unseen sets yet (R8). Phase 5 measures, on real replays, how
-  often revealed evidence contradicts every known set; that staleness rate decides it.
+- R8 is decided: no probability is held back for unseen sets. Measured on 2,000 real replays:
+  0% on the Gen 1–2 ladder, about 0.3% in Gens 3–4, concentrated in eight species, so the
+  prior is rebuilt from Showdown's current source instead (Order 10, `cp-05b`).
+- For Phase 6: R14, a switch recommendation must carry the trapping risk (Shadow Tag, Arena
+  Trap, Magnet Pull against our Steel-type) from the ability posterior, and offer a move as
+  well when it is 0.5 or more; R11, no damage numbers for a transformed Pokémon; the live
+  client must pass lines in arrival order (the request comes after the `|turn|` update).
 - If the test suite keeps slowing down, give the evaluation tests a `slow` marker (R9); the
   full suite stays mandatory before every merge.
 
@@ -140,13 +176,14 @@ Carried forward (from the 03c review):
 - Text files are LF on every platform (`.gitattributes`).
 
 Known, deliberate gaps:
-- `BattlePokemon.volatiles` is a free-form id set. Tighten it once the Showdown parser shows the
-  real set.
+- `BattlePokemon.volatiles` stays a free-form id set (decision P8). The parser emits the id of
+  whatever `-start` names (`substitute`, `confusion`, `leechseed`, `flashfire`, `slowstart`,
+  `focusenergy`, `foresight`, …) plus `transform`.
 - No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
 
 ## ▶ START HERE
 
-Read `docs/PROGRESS_TRACKER.md` → section **"Orders for Claude Code"** and follow the orders in that
+Read `docs/PROGRESS_TRACKER.md` → the **"▶ Current orders"** table at the top, then the matching **"▶ ACTIVE — Orders"** section and follow the orders in that
 order. The tracker is the logbook: the user's reviewer writes verdicts and next orders there, and you
 record what you built there. Always update it at the end of a step.
 

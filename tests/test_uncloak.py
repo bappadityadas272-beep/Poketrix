@@ -256,6 +256,7 @@ def test_four_unknown_moves_are_returned_as_they_are():
 # --------------------------------------------------------------------------- speed
 
 
+@pytest.mark.timing
 def test_one_update_takes_well_under_5ms():
     species = max(
         {row.pokemon_set.species.id for row in PRIOR4.all_sets()},
@@ -291,6 +292,7 @@ def held_out_metrics(gen):
     return evaluate(load_prior(gen), load_holdout(gen))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("gen", GENS)
 def test_held_out_true_set_survives_and_ranks_as_agreed(gen):
     for metrics in held_out_metrics(gen):
@@ -332,6 +334,7 @@ def test_seeing_the_item_and_ability_helps():
     assert shown[4].top1_accuracy == pytest.approx(shown[4].true_set_kept)  # nothing left to guess
 
 
+@pytest.mark.slow
 def test_out_of_date_prior_falls_back_and_never_raises():
     """The deliberately unfair test: 5% of the sets are missing from the prior."""
     stale = thinned(PRIOR4, share=STALE_SHARE, seed=4)

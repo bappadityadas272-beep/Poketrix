@@ -332,8 +332,8 @@ def test_variable_power_moves_without_a_rule_are_reported(gen, move):
     assert result.damage is None and result.unsupported_reason
 
 
-@pytest.mark.parametrize("gen", list(Generation))
-def test_report_works_and_is_fast_in_every_generation(gen):
+def _tauros_report(gen):
+    """(a function that builds one 4-move x 6-target report and returns its time in ms)."""
     tauros = mon(gen, "tauros")
     moves = [DEX[gen].move(m) for m in ("bodyslam", "earthquake", "hyperbeam", "blizzard")]
     targets = [
@@ -349,6 +349,18 @@ def test_report_works_and_is_fast_in_every_generation(gen):
             assert all(m.damage is not None for m in result.payload.our_moves)
         return (perf_counter() - started) * 1000
 
+    return one_report
+
+
+@pytest.mark.parametrize("gen", list(Generation))
+def test_report_works_in_every_generation(gen):
+    assert _tauros_report(gen)() > 0
+
+
+@pytest.mark.timing
+@pytest.mark.parametrize("gen", list(Generation))
+def test_report_is_fast_in_every_generation(gen):
+    one_report = _tauros_report(gen)
     one_report()  # warm the caches
     # Best of three batches, so a burst of unrelated load on the machine does not fail the test.
     medians = [statistics.median(one_report() for _ in range(15)) for _ in range(3)]

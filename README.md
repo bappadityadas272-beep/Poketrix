@@ -15,7 +15,7 @@ and an LLM that only ever *explains* already-computed numbers.
 | 2 | Dex data layer (Gens 1–4 species/moves snapshot) | done (cp-02) |
 | 3 | Deterministic Math layer (type chart, stats, damage) — Gen 4 first, then 3 → 2 → 1 | done (cp-03a, cp-03b, cp-03c) |
 | 4 | Bayesian set uncloaker (Showdown Gen 1–4 Random Battle set pools as priors) | done (cp-04) |
-| 5 | Showdown battle-log parser → `GameState` | next — see docs/PROGRESS_TRACKER.md |
+| 5 | Showdown battle-log parser → `GameState` | done (cp-05) |
 | 6 | Orchestrator (plain state machine first) + synthesis guardrails | |
 | 7 | XGBoost action predictor (needs replay data) | |
 | — | Knowledge graph / RAG, vision ingestion | deferred |
@@ -27,6 +27,14 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows  (source .venv/bin/activate on Linux/macOS)
 pip install -e ".[dev]"
 pytest
+```
+
+`pytest` runs every correctness test. The latency budgets are checked separately, because they
+depend on how busy the machine is:
+
+```bash
+pytest -m timing        # latency budgets only
+pytest -m "not slow"    # quick run: skips the corpus evaluations
 ```
 
 See `docs/CHECKPOINTS.md` for the branch/tag workflow.

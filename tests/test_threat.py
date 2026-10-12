@@ -173,6 +173,7 @@ def test_threat_schema_rules():
         ThreatReport(attacker_species="a", defender_species="b", threats=[likely, likely])
 
 
+@pytest.mark.timing
 def test_report_for_the_largest_hypothesis_table_is_fast():
     species = max(
         {row.pokemon_set.species.id for row in PRIOR4.all_sets()},

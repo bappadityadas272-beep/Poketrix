@@ -1,6 +1,6 @@
 """Poketrix shared contracts. Import from here, not from submodules."""
 
-from .battle import HAZARDS, ActionRequest, FieldState, GameState, SideState
+from .battle import FORCED_MOVES, HAZARDS, ActionRequest, FieldState, GameState, SideState
 from .enums import (
     ActionKind,
     BoostStat,
@@ -40,6 +40,8 @@ from .pokemon import (
     Species,
     StatSpread,
     gen1_2_hp_dv,
+    move_matches,
+    moves_fit,
     to_id,
 )
 from .sets import PriorSet, SetEvidence

@@ -6,9 +6,14 @@ from typing_extensions import Self
 
 from .enums import Generation, PlayerSlot, SideCondition, Weather
 from .generation import rules_for
-from .pokemon import BattlePokemon, ShowdownId, Strict
+from .pokemon import BattlePokemon, ShowdownId, Strict, moves_fit
 
 HAZARDS = frozenset({SideCondition.SPIKES, SideCondition.TOXIC_SPIKES, SideCondition.STEALTH_ROCK})
+# Choices the simulator offers that are in no set: out of PP, recharging, or (Gen 1) held by a
+# trapping move.
+FORCED_MOVES = frozenset({"struggle", "recharge", "fight"})
+# While one of these is on the active Pokémon, some of the moves it is offered are not its own.
+BORROWS_MOVES = frozenset({"transform", "mimic"})
 
 
 class FieldState(Strict):
@@ -71,8 +76,9 @@ class SideState(Strict):
                     raise ValueError(f"switch target {i} is fainted")
             if self.request.available_moves and self.active is not None:
                 ks = self.active.known_set
-                if ks is not None:
-                    bad = set(self.request.available_moves) - set(ks.moves)
+                if ks is not None and not self.active.volatiles & BORROWS_MOVES:
+                    offered = set(self.request.available_moves) - FORCED_MOVES
+                    bad = [move for move in offered if not moves_fit([move], ks.moves)]
                     if bad:
                         raise ValueError(f"request offers moves {sorted(bad)} not in known set")
         return self
