@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-12 (cp-05b approved; Phase 6 decisions Q1–Q10 given; orders 12–13 issued)
+Last updated: 2026-10-13 (Order 12 approved; F1–F3 decided; Order 12b (score fixes) + Order 13 (win rates) issued)
 
 ## Status at a glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-12 (cp-05b approved; Phase 6 decisions Q1–Q10 given; ord
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
-| 6 | Turn engine: orchestrator + decision policy + template synthesis | Proposal **approved with changes**; build steps (a)+(b) next (Order 12) | `cp-06` pending |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | Steps (a)+(b) **approved**; score fixes F1/F2 (Order 12b), then win rates (Order 13) | `cp-06` pending |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
@@ -22,13 +22,11 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 9 | `decision_index`, merge `cp-05` | No | **Done** (`cp-05`) |
-| 10 | Rebuild the prior (R8) | No | **Done** (`cp-05b`; staleness 27 → 0) |
-| 11 | Phase 6 design proposal | Yes | **Done, decided** (see "Review of the Task 06 proposal") |
-| 12 | Phase 6 build steps (a) and (b), plus A2 CI and A3 demo | **Yes**, after (b) | **Built, awaiting review** (findings F1–F3 under Order 12 need a decision) |
-| 13 | Phase 6 step (c): bridge + win rates, then `cp-06` | **Yes**, with the win rates | **To do** (after 12 is approved) |
+| 12 | Phase 6 steps (a)+(b), CI, R15, `analyze` | Yes | **Done, approved** (`8f6109f`, `1b4e19b`) |
+| 12b | Score fixes F1 (second exchange only if both alive, tempo γ) and F2 (self-KO cost), plus regression tests | No (pre-approved, if its checks pass) | **To do** |
+| 13 | Bridge + paired win rates (E1–E3), tuning γ, a-floor and Q2 on tuning seeds only | **Yes**, with the results, before `cp-06` | **To do** (straight after 12b) |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 6". The Advice section (A1–A6) still applies.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 7". The Advice section still applies.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -2427,9 +2425,9 @@ If it doesn't hold in some generation, keep the `t` discount for that generation
 - `M(active)` uses the HP before the exchange. That's an accepted approximation; note it in the docstring.
 - Gen 1: a trapping move (Wrap, Bind) can stop the target from acting. v0 ignores that. Note it, and don't model it.
 
-## ▶ ACTIVE — Orders for Claude Code, batch 6 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 6 (Order 13 is carried into batch 7)
 
-### Order 12: Phase 6 build, steps (a) and (b). **STOP after (b)** for review.
+### ✅ DONE — Order 12: Phase 6 build, steps (a) and (b). **STOP after (b)** for review. _(→ 8f6109f, 1b4e19b; approved 2026-10-13)_
 Branch: `task/06-orchestrator`.
 0. **A2 first,** as its own small commit: a GitHub Actions workflow that installs, runs `ruff`, then runs `pytest -m "not timing"`
    on Python 3.10 and 3.12, on push and on pull requests. Check that it runs green on the pushed branch.
@@ -2552,7 +2550,7 @@ a stage with nothing to work on (R11, a fainted target, no posterior) returns `f
 empty payload and the reason, not `error`; the writer receives a `Brief` (decision, numbers,
 caveats), because a `TurnReport` cannot exist before its recommendation.
 
-### Order 13: Phase 6 step (c) — the bridge and the win rates. **STOP with the results.** (Start only after Order 12 is approved.)
+### ⤷ MOVED — Order 13: see batch 7 (its text there replaces this one)
 1. The bridge (Q5 + R15), the two players, paired games (E1), and the seed ranges written here first (E2).
 2. Tune the Q2 constants on the tuning seeds only, and report them.
 3. Run the evaluation: policy against max-damage and policy against random, 500 pairs per gen each, plus max-damage against random, 500 per gen.
@@ -2560,6 +2558,73 @@ caveats), because a `TurnReport` cannot exist before its recommendation.
    trap re-asks, and latency p50 and p95. Then the E3 verdict.
 5. If E3 passes: A4 (a README results table), then **stop** for review before the `cp-06` merge. If it fails: **stop** and report, with no
    tuning on the evaluation seeds.
+
+## Review of Order 12 (2026-10-13, reviewer, for the user)
+
+Verdict: **APPROVED**, with the score fixes below to be made before the win-rate run.
+
+What's good:
+
+- **R15 settled from the source.** `sim/side.ts` `chooseSwitch` re-asks a trapped switch with `trapped: true`, and no turn is
+  spent. Switches are not discounted for trapping; the text still states the risk. Correct.
+- **Latency:** p95 is 27–39 ms per gen, with 0 timeouts and 0 errors in 8,000 decisions (measured on battery). That's far inside 250 ms.
+- **Fallback ladder:** every path has a test. `numbers` → `allowed_numbers` is wired up, and CI is green.
+- **The three deviations** (typed stage fields on `TurnReport`, `fallback` with a reason rather than `error`, the `Brief` handed
+  to the writer): **all accepted.** Each is cleaner than what was proposed.
+- **Raising F1–F3 instead of patching them quietly was exactly right.** The `analyze` output made the flaw visible, which
+  is what it's for.
+
+### Decisions on F1–F3
+
+| # | Ruling |
+|---|--------|
+| F1 | **Accepted, both parts.** (1) The second exchange counts only if both Pokémon are still in: staying = `trade(m) + γ·P(we survive)·(1 − P(we KO))·M(active)`. (2) Tempo factor `γ` on **every** second-exchange term, on the stay side *and* the switch side, so the two stay comparable: switching = `−a·D(X) − hazard(X) + γ·P(X survives)·M(X)`. Start at γ = 0.5. Tune it on the tuning seeds from the grid {0.3, 0.5, 0.7, 1.0} only. Update the docstring formula and its worked example. |
+| F2 | **Accepted, generalised.** Any move whose user faints (Showdown's `selfdestruct` flag: Explosion, Self-Destruct, Memento, Healing Wish, Lunar Dance where they exist) is charged `1.0` (its own remaining HP) in `trade`, and its stay value has `P(we survive) = 0`. Recoil is **optional (A7):** the calculator already has absolute damage, so recoil's share of our HP = `recoil_fraction × expected_absolute_damage / our_remaining_hp`, capped at 1. Add it if it takes under an hour; otherwise it goes under known limits with the Hyper Beam recharge. |
+| F3 | **Deferred to Order 13, as recommended,** but as a *tuned* knob: add `a_floor` (the opponent's attack probability is at least this value), tuned on the tuning seeds from {0, 0.5}. Report its effect. |
+
+### Guardrail metrics. Report them on the fixtures after the fix, and again on the evaluation games
+
+- **Thrown-away KOs:** the share of decisions where the engine advises a *voluntary* switch while a move with KO ≥ 90% and
+  `f ≥ 0.9` (we move first) was legal. Target **0**. Any case left must be listed with its numbers.
+- **Voluntary switch rate:** report it before the fix (114 / 337 = 34%) and after. There's no target; it is a sanity signal.
+- **Self-KO rate:** how often a self-KO move is advised, and in what positions (it should mostly be the last Pokémon or a
+  guaranteed trade).
+
+### Timing note
+The Gen 1 and Gen 2 calculator timing tests ran at 8.5 and 8.8 ms against an 8 ms limit, **on battery**. Re-run them on AC power before
+`cp-06`. If they still fail on AC, report the medians and propose a new limit then. Don't change the limit now.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 7 (do these in order, stopping where marked)
+
+### Order 12b: the score fixes (pre-approved, no stop if the checks pass)
+On `task/06-orchestrator`:
+1. Make F1 (both parts, with γ a named parameter defaulting to 0.5), F2 (the self-faint charge), and F3's `a_floor` parameter
+   (default 0). Recoil (A7) is optional.
+2. **Regression tests from the real turns:**
+   - Gen 4, fixture battle 0, turn 2: Porygon-Z must choose **Tri Attack**, not the Golduck switch.
+   - Gen 2, the Explosion turns 3–7: Explosion must no longer be advised at full value. Assert the score now includes the
+     self-faint charge, and give the expected choice.
+   - The Pinsir and Hitmontop turns must keep their current choices.
+3. Report the three guardrail metrics on the 8 fixture battles, before and after. Thrown-away KOs must be 0, or each case listed.
+4. Full suite green, `ruff` clean, CI green. Then go straight to Order 13. If a check fails, **stop** and report.
+
+### Order 13: the bridge and the win rates (replaces the batch-6 text). **STOP with the results, before `cp-06`.**
+1. The bridge (Q5 + R15: trap re-asks counted separately), the policy and max-damage players, and paired games (E1).
+   **Write the tuning and evaluation seed ranges here before running anything** (E2).
+2. **Tune on the tuning seeds only:** γ ∈ {0.3, 0.5, 0.7, 1.0}, `a_floor` ∈ {0, 0.5}, and the Q2 constants (small steps around the
+   provisional values). Use about 100 pairs per gen against max-damage for each setting. Keep the grid to what's listed, so that
+   tuning can't overfit. Report every setting's win rate, and pick by pooled win rate.
+3. Freeze the chosen settings, then run the evaluation: policy against max-damage and policy against random, 500 pairs per gen each,
+   plus max-damage against random, 500 per gen.
+4. Report per gen and pooled:
+   - win rates with Wilson intervals, and pair outcomes (2–0, split, 0–2);
+   - average turns;
+   - the fallback, timeout and error shares, and trap re-asks;
+   - the three guardrail metrics;
+   - p50 and p95 latency (on AC power if possible).
+   Then give the **E3 verdict.**
+5. E3 passes → write A4 (the README results table), then **stop** for review before the `cp-06` merge. E3 fails → **stop** and
+   report, with no tuning on the evaluation seeds.
 
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 
