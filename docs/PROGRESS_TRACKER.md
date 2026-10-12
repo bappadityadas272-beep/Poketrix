@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (tuning step 1 reviewed: γ 0.5 / no floor leads at 77.8%; Claude Code's pass-mark question answered by 13-A1)
+Last updated: 2026-10-13 (ruling 13-A6 on E3.2: option P1 adopted; evaluation cleared to run)
 
 ## Status at a glance
 
@@ -23,7 +23,7 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
 | 12b | Score fixes F1/F2, `a_floor`, guardrail audit | No | **Done, accepted** (`f93bb0b`; the user's "KO keeps the bonus" correction accepted) |
-| 13 | Tuning, then the evaluation, **with amendments 13-A1…A5 applied before any evaluation game** | **Yes**, with the results, before `cp-06` | **Stopped before the evaluation**: tuning done, setting frozen, amendments applied; pass mark E3.2 needs a ruling (P1–P3, see the Order 13 checkpoint) |
+| 13 | Tuning, then the evaluation | **Yes**, with the results, before `cp-06` | **Cleared to run the evaluation.** Tuning frozen (γ 0.5, `a_floor` 0, `utility_scale` 1.5); E3.2 ruled by **13-A6 (P1)** |
 | 14 | Hygiene after `cp-06`: move out of OneDrive, timing on AC, archive the logbook, golden-decision CI test, dex field | No (pre-approved envelope) | Queued |
 | 15 | Phase 7 design proposal + v1 policy backlog | **Yes**, after the proposal | Queued |
 
@@ -2822,6 +2822,36 @@ decisions, p95 26 ms, 0 quarantined pairs.
 | P3 | Run it as amended | Gen 1, and possibly Gen 2, pass or fail largely by chance; a fail burns the evaluation range |
 
 After the ruling: one command per match runs the evaluation (about 12,000 games, under two hours), then the report and verdict.
+
+#### Reviewer ruling 13-A6 on E3.2 (2026-10-13): **P1 adopted.** Run the evaluation.
+
+**The arithmetic is confirmed.** At about 88% and 1,000 games per player, the Newcombe half-width is ±2.85 points per generation, so the
+per-generation −2 margin needs an observed lead of about +0.9 points. That makes it a coin flip for a policy that is truly about +1 ahead.
+Pooled over four gens (4,000 games each), the half-width is about ±1.3 points. Stopping to ask was right: this is the second
+pass-mark flaw that measurement caught before the seeds were spent. For future pass marks, the reviewer will do the
+power check *before* writing the mark.
+
+**The final E3.2 (replaces 13-A1's per-generation form):**
+- **Pooled:** the policy's win rate against random minus max-damage's win rate against random, with each generation weighted equally
+  (equal n). The 95% Newcombe interval must have a lower end **above −2 points**.
+- **Per generation (a safety net):** each generation's interval must have a lower end **above −5 points**, so a clearly worse
+  generation still fails. At ±2.85 (standard error about 1.45 points) the cut is an observed lead below −2.15. A truly level generation passes about 93% of the time; one truly +1 ahead (the Gen 1 dry run) passes about 98.5%; one truly 5 points behind fails about 97.5% of the time.
+- **Supplementary only, not part of the verdict:** if the two against-random matches use the same game indices (same teams, same battle
+  seed), also report a paired analysis by index (discordant counts and the paired difference interval). It shows the real precision,
+  but the verdict uses the pre-registered unpaired rule above.
+
+E3.1 (head to head against max-damage: pooled lower bound above 50%, no gen below 45%) and E3.3 (health, including the
+0.5% quarantine mark) are unchanged. 13-A4 (burned seeds) still applies.
+
+**Other points from the checkpoint:**
+- **13-A2:** done for all eight settings, and 1,600 of 1,600 Gen 1 games had the same winner. The tuning table is clean.
+- **The frozen setting** is `utility_scale` 1.5, chosen by the pre-written rule. It leads the defaults by only 5 games in 800, which is noise.
+  It's correct to apply the rule as written. 1.5 sits at the edge of the grid, so **don't** extend tuning now. Note "`utility_scale` > 1.5 untested" in
+  the v1 backlog.
+- **The dry-run numbers were on tuning indices,** so they are not evidence for the verdict. Don't quote them as results.
+
+**Go:** run the evaluation on indices 2,000,000–2,000,499 with the frozen setting, then report per Order 13 step 4 with the E3 verdict
+under 13-A6, and **stop** before `cp-06`.
 
 ### Order 14: hygiene after `cp-06` is approved (pre-approved envelope, no stop unless a check fails)
 
