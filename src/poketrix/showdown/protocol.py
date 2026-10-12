@@ -46,7 +46,7 @@ IGNORED = frozenset({
     "", "t:", "rule", "rated", "c", "c:", "chat", "j", "J", "join", "l", "L", "leave", "n", "N",
     "name", "raw", "html", "uhtml", "uhtmlchange", "inactive", "inactiveoff", "debug", "seed",
     "error", "bigerror", "init", "title", "deinit", "sentchoice", "split", "badge",
-    "-crit", "-supereffective", "-resisted", "-miss", "-notarget", "-hint", "-message", "-anim",
+    "-crit", "-supereffective", "-resisted", "-miss", "-notarget", "-message", "-anim",
     "-hitcount", "-nothing", "-center", "-combine", "-waiting", "-ohko", "-prepare",
     "-mustrecharge", "message", "clearpoke", "poke", "teampreview", "swap", "replace",
     "-singleturn", "-singlemove", "-block", "-zpower", "-zbroken", "-mega", "-primal", "-burst",
@@ -61,6 +61,10 @@ _WEATHER = {
 _EFFECT_KINDS = ("move", "item", "ability")
 _FLAG = re.compile(r"\[[a-z]+\]")
 _REQUEST = "|request|"
+# Gen 1: the simulator says so when a Pokémon is about to use a move it did not pick (the
+# cartridge's move-selection glitch, see `runMove` in data/mods/gen1/scripts.ts).
+_DESYNC_HINT = "Desync Clause Mod activated"
+DESYNC = "desync"
 _NO_ABILITY = "noability"  # what a request says in Gens 1-2
 
 
@@ -214,6 +218,12 @@ def _ability(args, tags) -> Event:
     return AbilityEvent(pokemon=parse_ref(args[0]), ability_id=ability, **tags)
 
 
+def _hint(args, tags) -> Event | None:
+    if args and args[0].startswith(_DESYNC_HINT):
+        return TagEvent(kind=DESYNC)
+    return None  # every other hint is commentary
+
+
 def _tag_only(kind: str) -> Callable:
     def parse(args, tags) -> Event:
         pokemon = parse_ref(args[0]) if args and _is_ref(args[0]) else None
@@ -298,6 +308,7 @@ _PARSERS: dict[str, Callable[[list[str], dict], Event]] = {
     "-transform": lambda args, tags: TransformEvent(
         pokemon=parse_ref(args[0]), target=parse_ref(args[1]), **tags
     ),
+    "-hint": _hint,
     **{kind: _tag_only(kind) for kind in _TAG_ONLY},
 }
 
