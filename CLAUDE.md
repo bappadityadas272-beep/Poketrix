@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-05b` merged (Phases 0–5 done, prior rebuilt); next: the Phase 6 proposal, Order 11 (2026-10-13)
+## Current state — `cp-05b` merged (Phases 0–5 done, prior rebuilt); Phase 6 proposal on `task/06-orchestrator` awaits the user's decisions (2026-10-13)
 
 | Tag   | What exists |
 |-------|-------------|

@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (Orders 9 and 10 done: `cp-05` and `cp-05b` merged and tagged; Order 11 next)
+Last updated: 2026-10-13 (Orders 9 and 10 done; Order 11: Phase 6 proposal written, awaiting the user's decisions Q1–Q10)
 
 ## Status at a glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-13 (Orders 9 and 10 done: `cp-05` and `cp-05b` merged and 
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode; prior rebuilt from the current source) | `cp-05`, `cp-05b` |
-| 6 | Orchestrator + decision policy + synthesis guardrail | Next: design proposal (Order 11) | |
+| 6 | Orchestrator + decision policy + synthesis guardrail | Design proposal written, **awaiting decisions** (Q1–Q10) | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
@@ -26,7 +26,7 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus 8 of 8 with `py
 | 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
 | 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **Done** (`cp-05`; see the result under Order 9) |
 | 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **Done** (`cp-05b`; all checks passed, ladder staleness now 0) |
-| 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **To do** |
+| 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **Proposal written, stopped for decisions** (section "Task 06 design proposal") |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 5", near the end of this file. The optional
 "Advice for Claude Code" section follows the orders; apply an item whenever it fits the work you are doing.
@@ -2221,6 +2221,147 @@ snapshot into one validated, explained recommendation within 500 ms. Cover:
    the bridge design, templates versus an LLM, and the `TurnReport` shape.
 
 Then **stop** for the user's approval before writing any code.
+
+## Task 06 design proposal — the turn engine (2026-10-13, awaiting decisions)
+
+Branch `task/06-orchestrator`. No code yet. Goal: one player-mode snapshot in, one validated
+and explained recommendation out, in under 500 ms, with every number traceable.
+
+### 1. Pipeline
+
+New package `src/poketrix/advisor/`. A plain state machine: a table of stages run in order, each
+returning a `SubsystemResult`, each with a budget.
+
+| # | Stage | Input → output | Budget | If it fails or times out |
+|---|-------|----------------|--------|--------------------------|
+| 1 | Uncloak | evidence of each opposing Pokémon still alive → `SetPosterior` each | 20 ms | That Pokémon has no posterior; stages 2–4 skip it and say so |
+| 2 | Threats | their active against our active and each legal switch-in → `ThreatReport` each | 150 ms | Switches are not scored; the policy chooses among moves only |
+| 3 | Offence | each legal move against their active, over the set hypotheses → `MoveOutlook` | 100 ms | Moves are ranked by what was evaluated; the rest are "unknown" |
+| 4 | Order | P(we move first) per move: priority, speed over the hypotheses, paralysis, Trick Room, Choice Scarf | 10 ms | 0.5 is assumed and reported as assumed |
+| 5 | Opponent | `ActionPrediction`, `model_version="heuristic-0"` | 5 ms | Assume they attack |
+| 6 | Policy | everything above → scored options → one choice | 10 ms | The legal move with the highest expected damage, else the first legal action |
+| 7 | Write | the choice → `Recommendation`, validated against the state and `allowed_numbers` | 5 ms | A fixed minimal sentence with no numbers |
+
+- **Timeouts without threads.** The work is CPU-bound Python, so a thread cannot be stopped from
+  outside. One `Deadline` is passed down; a stage checks it between units of work (per Pokémon,
+  per move) and returns `timeout` with what it has finished. Stages are ordered so the most
+  useful work happens first (our active before the bench).
+- **There is always a legal answer.** The last fallback needs only the request.
+- **`TurnReport`** (new schema in `schemas/outputs.py`) carries: the snapshot key
+  `(turn, decision_index)`; every stage's `SubsystemResult` (payload, status, latency); the scored
+  options; the final `Recommendation`; and `numbers`, a flat `dict[str, float]` in which each
+  stage registers what it computed under a stable key (`our.icebeam.ko`, `their.p_ko`,
+  `switch.2.expected_pct`, `trap.risk`). `numbers` is exactly what the guardrail receives as
+  `allowed_numbers`, so a number in the text is traceable to a stage by its key.
+
+### 2. Decision policy v0 (deterministic, no ML)
+
+All quantities are fractions of *remaining* HP, weighted by the posterior.
+
+| Symbol | Meaning | Source |
+|--------|---------|--------|
+| `d(m)` | Expected share of their active's remaining HP our move `m` removes, accuracy included | Offence |
+| `k(m)` | P(`m` knocks their active out this turn) | Offence (exact KO odds) |
+| `D(X)` | Expected share of our Pokémon X's remaining HP their best move removes | Threats |
+| `K(X)` | P(they knock X out this turn if they attack) = `p_ko_best_move` | Threats |
+| `f(m)` | P(we move before them) | Order |
+| `a` | P(they attack) | Opponent |
+| `t` | P(we are trapped) (R14) | Ability marginal of the posterior |
+
+- **One exchange with move `m`:** `trade(m) = d(m)·(1 − a·K·(1 − f(m))) − a·D·(1 − k(m)·f(m))`.
+  We deal our damage unless they knock us out first; we take theirs unless we knock them out first.
+- **Matchup value of our Pokémon X against their active:** `M(X) = max over X's moves of trade(m)` with `a = 1`.
+- **Staying, move `m`:** `S = trade(m) + P(we survive the turn)·M(active)`.
+- **Switching to X:** `S = −a·D(X) − hazard(X) + P(X survives the hit)·M(X)`. The switch-in takes
+  the hit now and then has its own matchup. `hazard(X)` is the exact entry damage.
+- **Trapping (R14):** `t` = P(their ability is Shadow Tag or Arena Trap and applies, or Magnet Pull
+  against our Steel-type). A switch scores `(1 − t)·S(switch) + t·S(best move)`. Any switch
+  recommendation states `t` when it is above 0, and when `t ≥ 0.5` the text also names the best move.
+- **Forced switch:** the legal switch-in with the highest `M(X) − hazard(X)`.
+- **Status and utility moves.** v0 scores three kinds and nothing else: recovery (the HP it
+  restores, as if it were damage undone), a hazard that is not up yet, and a sleep, paralysis or
+  poison move on a healthy target. The last two get fixed, documented constants (decision Q2). Every
+  other status move scores 0 and is never recommended in v0.
+- **Ties, in order:** higher score; higher `k`; higher accuracy; a move before a switch; the
+  request's own order. No randomness, so a game replays identically.
+- **Opponent heuristic-0:** `p_switch = clamp(0.10 + 0.40·k_best, 0.05, 0.60)` if they have a
+  healthy Pokémon on the bench, else 0, where `k_best` is our best KO chance on their active. The
+  rest is split between attack and utility by the share of damaging moves in their posterior
+  moveset. These constants are placeholders that Phase 7 replaces.
+- **Fallbacks.** R5: an unsupported move has no `d` or `k`; it is listed as unknown, never as 0,
+  and if their best move is unsupported the text says the KO chance is a lower bound. R11: if
+  either active is transformed there are no damage numbers; the engine returns status `fallback`
+  with the highest-power legal move and says why.
+
+Known limits of v0: it looks one exchange ahead plus the following matchup; it does not plan
+set-up moves, PP, weather turns, or predict their switch-in.
+
+### 3. Evaluation: win rate in the simulator
+
+- **Bridge (dev tool, not runtime).** `scripts/randbats/play_bridge.mjs` runs battles in the pinned
+  simulator, one long-lived process for many games. For a side marked `external` it prints every
+  protocol chunk as a JSON line and reads that side's choice (`move 2`, `switch 3`) from stdin. A
+  side marked `random` is the simulator's own `RandomPlayerAI`.
+- **Python side.** `scripts/play_games.py` feeds the lines to `BattleTracker`, calls a `Player`
+  (`choose(snapshot) -> Recommendation`) and sends the choice back. Two players: the policy, and
+  the max-damage baseline, which uses the same Offence stage and always picks the highest
+  expected damage (a forced switch goes to the first legal Pokémon). Both use only what their own
+  side can see.
+- **Matches:** policy against random and policy against max-damage, 500 games per generation
+  each (4,000 games), with fixed seeds. Plus max-damage against random, 200 per generation, to
+  show how strong the baseline is.
+- **Reported per generation and opponent:** wins of games with the 95% Wilson interval, average
+  turns, the share of decisions that ended in `fallback`, `timeout` or `error`, and choices the
+  simulator rejected (must be 0; any is a bug).
+- **Cost:** about 35 decisions per game for each external side. At 50–150 ms per decision that is
+  2–5 hours in one process; four processes in parallel bring it under 90 minutes.
+- **What it proves and what it does not.** Beating these two shows the pipeline's advice is better
+  than random and than greedy play. It says nothing yet about play against people.
+
+### 4. Synthesis
+
+- v0 is **templates, no LLM**: one template per kind of decision (attack for the knock-out, best
+  trade, defensive switch, forced switch, limited information). The headline fits 120 characters,
+  the explanation 600.
+- A template may only print values from `TurnReport.numbers`. `cited_numbers` holds those exact
+  values and the guardrail checks them and the action's legality. An extra test reads every number
+  out of the generated text and requires it to be the rounded form of a cited one.
+- Writers sit behind one small `Writer` protocol (`write(report) -> Recommendation`). An LLM writer
+  would be a second implementation: key from an environment variable, never in the repo, with
+  the template as its fallback when validation fails twice.
+- **Recommendation:** no LLM in Phase 6. It cannot improve the decision, and a network call does
+  not fit the 500 ms budget. Consider it in Phase 8 as an on-demand "explain more", outside the budget.
+
+### 5. Latency
+
+- Measure p50 and p95 per decision and per stage on the player-mode corpus (2,000 decisions per
+  generation, sampled with a fixed seed), on AC power with the machine idle. Gen 1 multi-hit
+  cases (R4) are reported separately.
+- Expected from the Phase 3–5 measurements: about 10 ms per threat report with the largest
+  hypothesis table, so up to 60 ms for six; Offence is of the same order. Target p95 under
+  250 ms; the hard limit stays 500 ms.
+- Optimise only what the measurement shows: first a per-turn cache of `evaluate_move` results,
+  then evaluating switch-ins only when staying scores badly.
+
+### 6. Out of scope
+
+The live client and overlay (Phase 8), the XGBoost predictor (Phase 7), doubles, an LLM writer,
+multi-turn search.
+
+### 7. Decisions for the user
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| Q1 | Policy: the one-exchange-plus-matchup score above, or a simpler rule list (attack if we can KO, switch if they can)? | The score. It is one formula, every term is a number we already compute, and the rule list is its special cases |
+| Q2 | Status moves in v0: recovery, hazards and sleep/paralysis/poison with fixed constants; all others never recommended? | Yes. Propose constants at review of the build, tuned only against the simulator results, and report them |
+| Q3 | Opponents and game counts: random and max-damage, 500 games per generation each, plus 200 of max-damage against random? | Yes |
+| Q4 | Pass marks for Phase 6: win rate above 50% against both, with the interval's lower end above 50%? | Yes as the minimum to merge; report the real numbers whatever they are |
+| Q5 | Bridge: one Node process, JSON lines over stdin and stdout, both sides drivable from Python? | Yes. No new dependency, and it reuses the pinned simulator |
+| Q6 | Templates only in Phase 6, the LLM writer deferred to Phase 8? | Yes |
+| Q7 | `TurnReport` as described, added to `schemas/outputs.py`, with `numbers` as the single source for `allowed_numbers`? | Yes |
+| Q8 | Timeouts by a shared deadline checked between units of work, no threads or processes? | Yes. Simple, deterministic, and enough for CPU-bound stages |
+| Q9 | Build order: (a) Offence, Order and `TurnReport`; (b) policy and templates; (c) bridge and win rates; with a stop after (b) and after (c)? | Yes: two reviews, the second with the headline numbers |
+| Q10 | Advice A3 (`python -m poketrix analyze <log>`) in step (b), A4 (README results table) after step (c), A2 (GitHub Actions) as a separate small commit now? | Yes to all three, if you want CI on the repository |
 
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 
