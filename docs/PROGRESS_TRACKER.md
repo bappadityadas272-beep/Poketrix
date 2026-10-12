@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (Orders 9 and 10 done; Order 11: Phase 6 proposal written, awaiting the user's decisions Q1–Q10)
+Last updated: 2026-10-12 (cp-05b approved; Phase 6 decisions Q1–Q10 given; orders 12–13 issued)
 
 ## Status at a glance
 
@@ -11,25 +11,24 @@ Last updated: 2026-10-13 (Orders 9 and 10 done; Order 11: Phase 6 proposal writt
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode; prior rebuilt from the current source) | `cp-05`, `cp-05b` |
-| 6 | Orchestrator + decision policy + synthesis guardrail | Design proposal written, **awaiting decisions** (Q1–Q10) | |
+| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | Proposal **approved with changes**; build steps (a)+(b) next (Order 12) | `cp-06` pending |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 847 passing on `main` (`cp-05b`) in the default run, plus 8 of 8 with `pytest -m timing` (taken at `cp-05`). `ruff` is clean.
+Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 7 | Test hygiene (R9/R11/R12/R13) | No | **Done** (`e8c35e9`) |
-| 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
-| 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **Done** (`cp-05`; see the result under Order 9) |
-| 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **Done** (`cp-05b`; all checks passed, ladder staleness now 0) |
-| 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **Proposal written, stopped for decisions** (section "Task 06 design proposal") |
+| 9 | `decision_index`, merge `cp-05` | No | **Done** (`cp-05`) |
+| 10 | Rebuild the prior (R8) | No | **Done** (`cp-05b`; staleness 27 → 0) |
+| 11 | Phase 6 design proposal | Yes | **Done, decided** (see "Review of the Task 06 proposal") |
+| 12 | Phase 6 build steps (a) and (b), plus A2 CI and A3 demo | **Yes**, after (b) | **To do** |
+| 13 | Phase 6 step (c): bridge + win rates, then `cp-06` | **Yes**, with the win rates | **To do** (after 12 is approved) |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 5", near the end of this file. The optional
-"Advice for Claude Code" section follows the orders; apply an item whenever it fits the work you are doing.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 6". The Advice section (A1–A6) still applies.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -2104,9 +2103,9 @@ Verdict: **APPROVED.** I checked the following on the user's machine (`76c6328`)
   uncloaker: P(the opponent's ability is Shadow Tag or Arena Trap, or Magnet Pull against our Steel-type), using the ability marginal.
   Any switch recommendation must carry that risk, and when it is ≥ 0.5 the policy must also give a move alternative.
 
-## ▶ ACTIVE — Orders for Claude Code, batch 5 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 5 (do these in order, stopping where marked)
 
-### Order 9: finish and close Phase 5 (pre-approved, no stop if green)
+### ✅ DONE — Order 9: finish and close Phase 5 (pre-approved, no stop if green) _(→ cp-05)_
 1. On `task/05-showdown-parser`, add `decision_index` (D2), and check the D1 tests (three cases, active Pokémon only).
 2. Run the full suite and `ruff`, then `pytest -m timing`, with AC power and the machine idle if possible. Log the medians.
 3. Run `git switch main`, then `git merge --no-ff task/05-showdown-parser`, then `git tag -a cp-05 -m "Showdown parser: spectator + player mode, evidence, staleness"`.
@@ -2123,7 +2122,7 @@ new); `ruff` clean.
 | A1 | Applied. `ownset.py` takes a `SetSource` protocol (`sets_for`), and the tracker's default source imports the prior on first use. Importing `poketrix.showdown` no longer loads `poketrix.uncloak`; a spectator log never does. |
 | Timing | `pytest -m timing`: 8 of 8 passed. The laptop was on battery (66%) at 14% CPU load, so not the AC-power run the order asked for. Medians: parsing 0.008 ms per log line; one posterior update 0.53 ms (41 hypotheses); a whole player-mode battle with 33 decisions 29 ms. |
 
-### Order 10: rebuild the prior from Showdown's current source (R8)
+### ✅ DONE — Order 10: rebuild the prior from Showdown's current source (R8) _(→ cp-05b)_
 The user is told about the download size in the reviewer's message. If the user said no, skip this order and mark it "Skipped".
 Branch: `task/05b-prior-rebuild`.
 1. **Smallest source first:** check whether an npm release of `pokemon-showdown` newer than 0.11.11 contains the
@@ -2192,7 +2191,7 @@ never wrong. It has its own test.
 
 The battle fixtures and the held-out tables were regenerated from the same source.
 
-### Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.**
+### ✅ DONE — Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.** _(→ proposal decided 2026-10-12)_
 Branch: `task/06-orchestrator`. Write the proposal as a new section in this tracker. Phase 6 turns one player-mode
 snapshot into one validated, explained recommendation within 500 ms. Cover:
 
@@ -2222,7 +2221,7 @@ snapshot into one validated, explained recommendation within 500 ms. Cover:
 
 Then **stop** for the user's approval before writing any code.
 
-## Task 06 design proposal — the turn engine (2026-10-13, awaiting decisions)
+## Task 06 design proposal — the turn engine (decided 2026-10-12, approved with changes)
 
 Branch `task/06-orchestrator`. No code yet. Goal: one player-mode snapshot in, one validated
 and explained recommendation out, in under 500 ms, with every number traceable.
@@ -2362,6 +2361,97 @@ multi-turn search.
 | Q8 | Timeouts by a shared deadline checked between units of work, no threads or processes? | Yes. Simple, deterministic, and enough for CPU-bound stages |
 | Q9 | Build order: (a) Offence, Order and `TurnReport`; (b) policy and templates; (c) bridge and win rates; with a stop after (b) and after (c)? | Yes: two reviews, the second with the headline numbers |
 | Q10 | Advice A3 (`python -m poketrix analyze <log>`) in step (b), A4 (README results table) after step (c), A2 (GitHub Actions) as a separate small commit now? | Yes to all three, if you want CI on the repository |
+
+## Review of Order 10 (cp-05b) — 2026-10-12, reviewer
+
+**Accepted.** The rebuild was the right call, and it was measured properly:
+
+- Ladder staleness in Gens 3–4 went from 27 to 0, and all 8 named species are at 0.
+- The synthetic floor is still 0, the uncloaker targets are still met, and the tables are 0.66 MB.
+- The source is pinned to Showdown commit `942cda7` (2026-10-09).
+- The Trick same-item bug was found by the regenerated corpus and fixed with its own test.
+
+Keep `python -m poketrix.showdown.corpus` as the standing check. Re-run it before any real-play claim, because the live
+server keeps changing sets.
+
+## Review of the Task 06 proposal — decisions (2026-10-12, reviewer, for the user)
+
+Verdict: **APPROVED WITH CHANGES.** The pipeline, the deadline-based timeouts, `TurnReport.numbers` as the single
+source for `allowed_numbers`, and the fallback ladder are all good. The changes below are part of the build.
+
+| # | Decision | Ruling |
+|---|----------|--------|
+| Q1 | Score-based policy | **Yes**, with these clarifications: `d(m)` and `D(X)` are capped at 1, because overkill has no value. A share of remaining HP stays a share (a KO counts as 1, whatever HP was left). Document `trade`, `M` and `S` in the module docstring with one worked example. |
+| Q2 | Status moves (recovery, hazards, sleep/para/poison), others 0 | **Yes.** The constants are tuned **only on separate tuning seeds**, never on the evaluation seeds (see E2). Report the constants and the tuning runs. |
+| Q3 | Opponents and counts | **Yes, with paired games (E1).** Raise max-damage against random to **500 per gen**, so the two win rates against random can be compared on equal footing. |
+| Q4 | Pass marks | **Replaced by E3.** "Above 50% against random" is too low a bar to mean anything. |
+| Q5 | Bridge | **Yes**, plus R15 below. |
+| Q6 | Templates only, no LLM in Phase 6 | **Yes.** |
+| Q7 | `TurnReport` in `schemas/outputs.py` | **Yes.** |
+| Q8 | Shared deadline, no threads | **Yes.** |
+| Q9 | Build (a), then (b), then (c); stop after (b) and after (c) | **Yes.** |
+| Q10 | A3 in (b), A4 after (c), A2 now | **Yes to all three.** A2 only adds a workflow file under `.github/workflows/`. It changes no repository setting, and no secrets are involved. |
+
+### Evaluation design (E1–E3) — replaces Q4
+
+- **E1: paired games.** Team luck dominates Random Battles. For every seed, play the game **twice with the teams
+  swapped**: the policy gets team A, then team B. Score each pair. That cancels most of the team luck, so
+  500 pairs per gen tell us much more than 500 single games. The report gives the win rate over games,
+  plus "pairs won 2–0 / split / lost 0–2".
+- **E2: separate seeds.** Use one seed range for tuning (the Q2 constants, any thresholds) and a different, fixed range for
+  the reported evaluation. Write both ranges in the tracker before running, so the evaluation can't be tuned to.
+- **E3: pass marks for `cp-06`.**
+  1. **Against max-damage, the real test:** pooled over the four gens (2,000 pairs), the 95% Wilson lower
+     bound of the game win rate is **above 50%**, and no single gen's point estimate is below 45%.
+  2. **Against random:** the policy's win rate is **not lower** than max-damage's own win rate against random. The
+     policy's interval lower bound must be at or above max-damage's point estimate, per gen.
+  3. **Health:** 0 illegal choices, `error` in 0 decisions, `timeout` in under 1% of decisions, and p95 latency under 250 ms.
+  If any mark is missed, **stop and report.** No tuning on the evaluation seeds to get past it.
+
+### New finding R15: a failed switch while trapped is probably free in Showdown
+
+`maybeTrapped` means the switch might be refused. In Showdown's protocol a refused switch normally comes back as
+`|error|[Unavailable choice]` followed by a **new request with `trapped: true`**, and the player simply chooses
+again without losing the turn. **Verify this in the pinned simulator's source** (Gens 1–4) before building. If it holds:
+
+- The policy does **not** discount switches by `t`. The text still mentions the trapping risk. Simplify the R14 rule to this.
+- The bridge and the player must handle that re-request. These refusals are **legitimate**, are counted separately as
+  "trap re-asks", and are **not** counted as illegal choices.
+
+If it doesn't hold in some generation, keep the `t` discount for that generation only, and say so.
+
+### Smaller notes
+
+- `trade(m)` assumes they stay in. When they switch (`p_switch`), our hit lands on an unknown Pokémon. That's fine for v0,
+  but list it under Known limits.
+- `M(active)` uses the HP before the exchange. That's an accepted approximation; note it in the docstring.
+- Gen 1: a trapping move (Wrap, Bind) can stop the target from acting. v0 ignores that. Note it, and don't model it.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 6 (do these in order, stopping where marked)
+
+### Order 12: Phase 6 build, steps (a) and (b). **STOP after (b)** for review.
+Branch: `task/06-orchestrator`.
+0. **A2 first,** as its own small commit: a GitHub Actions workflow that installs, runs `ruff`, then runs `pytest -m "not timing"`
+   on Python 3.10 and 3.12, on push and on pull requests. Check that it runs green on the pushed branch.
+1. **Check R15** in the simulator source, and record what you find (file and line, per gen) in this tracker.
+2. **(a):** the Offence and Order stages, the `TurnReport` schema with `numbers`, the stage runner with `Deadline`, and the fallback
+   ladder. Test every fallback path (R5 unsupported, R11 transformed, a timeout part-way through a stage, a missing posterior).
+3. **(b):** the policy (Q1 with the clarifications, R15 outcome, Q2 with *provisional* constants), templates behind `Writer`,
+   the guardrail wiring, and A3 (`python -m poketrix analyze <log> [--turn N]`). Tests:
+   - hand-built positions where the right choice is obvious: a KO available, about to be KO'd with a safe switch, a forced switch, trapped;
+   - the "every number in the text is a cited, rounded number" test;
+   - replaying a player-mode fixture produces a legal recommendation at every decision;
+   - latency p50 and p95 per stage on the corpus sample (timing marker).
+4. Write it up in this tracker: what was built, the latency table, and three example outputs of `analyze` on real turns. Then **stop**.
+
+### Order 13: Phase 6 step (c) — the bridge and the win rates. **STOP with the results.** (Start only after Order 12 is approved.)
+1. The bridge (Q5 + R15), the two players, paired games (E1), and the seed ranges written here first (E2).
+2. Tune the Q2 constants on the tuning seeds only, and report them.
+3. Run the evaluation: policy against max-damage and policy against random, 500 pairs per gen each, plus max-damage against random, 500 per gen.
+4. Report per gen and pooled: win rates with Wilson intervals, pair outcomes, average turns, fallback, timeout and error shares,
+   trap re-asks, and latency p50 and p95. Then the E3 verdict.
+5. If E3 passes: A4 (a README results table), then **stop** for review before the `cp-06` merge. If it fails: **stop** and report, with no
+   tuning on the evaluation seeds.
 
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 
