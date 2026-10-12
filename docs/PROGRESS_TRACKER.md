@@ -2658,6 +2658,28 @@ option scores below 0. `python -m poketrix.advisor.audit [dir]` prints this tabl
 5. E3 passes → write A4 (the README results table), then **stop** for review before the `cp-06` merge. E3 fails → **stop** and
    report, with no tuning on the evaluation seeds.
 
+**Plan, written on 2026-10-13 before any tuning or evaluation game was played (E2).**
+
+A game is fixed by `(generation, index)`: `play_bridge.mjs` derives both teams and the battle
+seed from base seed 20261401 and the index. A pair is the same index played twice with the two
+teams swapped. Simulator: the pinned checkout, commit `942cda7`.
+
+| Purpose | Game indices, per generation | Pairs per generation |
+|---------|------------------------------|----------------------|
+| Harness testing only (not reported) | 900,000 and up | a few |
+| **Tuning** | 1,000,000 to 1,000,099 | 100 |
+| **Evaluation** | 2,000,000 to 2,000,499 | 500 |
+
+Tuning, against max-damage only, 100 pairs per generation per setting (800 games each):
+
+1. γ ∈ {0.3, 0.5, 0.7, 1.0} × `a_floor` ∈ {0, 0.5}, with `utility_scale` 1.0: 8 settings.
+2. With the best (γ, `a_floor`): `utility_scale` ∈ {0.5, 1.5}, which moves every Q2 constant by
+   half. 2 more settings.
+
+The setting with the highest pooled win rate is frozen; a tie goes to the setting nearest the
+defaults (γ 0.5, `a_floor` 0, `utility_scale` 1). Nothing else is tried. The evaluation then
+runs once on the evaluation indices with the frozen setting.
+
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 
 These are suggestions, not orders. None needs a separate stop. Apply one when you are already working nearby, and

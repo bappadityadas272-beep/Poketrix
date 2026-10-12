@@ -115,6 +115,17 @@ def _outlook(
     )
 
 
+def move_outlooks(
+    situation: Situation, index: int, their_sets: list[tuple[float, BattlePokemon]]
+) -> list[MoveOutlook]:
+    """What each move of our Pokémon `index` does to their active Pokémon."""
+    attacker = situation.me.team[index]
+    return [
+        _outlook(situation, attacker, move_id, their_sets)
+        for move_id in _moves_of(situation, index)
+    ]
+
+
 def read_offence(
     situation: Situation, posterior: SetPosterior, deadline: Deadline, numbers: Numbers
 ):
@@ -125,11 +136,7 @@ def read_offence(
     for done, index in enumerate(attackers):
         if deadline.expired():
             return sheet, *_out_of_time(done, len(attackers))
-        attacker = situation.me.team[index]
-        sheet.by_attacker[index] = outlooks = [
-            _outlook(situation, attacker, move_id, their_sets)
-            for move_id in _moves_of(situation, index)
-        ]
+        sheet.by_attacker[index] = outlooks = move_outlooks(situation, index, their_sets)
         for outlook in outlooks:
             if outlook.expected_share is not None:
                 numbers[f"our.{index}.{outlook.move_id}.share"] = outlook.expected_share

@@ -219,6 +219,10 @@ class BattleTracker:
     def set_species_id(self, slot: PlayerSlot, index: int) -> str:
         return self._sides[slot].mons[index].set_species_id
 
+    def nickname(self, slot: PlayerSlot, index: int) -> str:
+        """The name the protocol uses for a Pokémon: what a choice or a request refers to."""
+        return self._sides[slot].mons[index].nickname
+
     def state(self, perspective: PlayerSlot | None = None) -> GameState:
         """A validated snapshot. Needs both leads on the field.
 
