@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (Order 12 approved; F1–F3 decided; Order 12b (score fixes) + Order 13 (win rates) issued)
+Last updated: 2026-10-13 (tuning step 1 reviewed: γ 0.5 / no floor leads at 77.8%; Claude Code's pass-mark question answered by 13-A1)
 
 ## Status at a glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-13 (Order 12 approved; F1–F3 decided; Order 12b (score f
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
-| 6 | Turn engine: orchestrator + decision policy + template synthesis | Steps (a)+(b) **approved**; score fixes F1/F2 (Order 12b), then win rates (Order 13) | `cp-06` pending |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | 12b **accepted**; tuning running; evaluation next under amended pass marks (13-A) | `cp-06` pending |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
@@ -22,11 +22,12 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 12 | Phase 6 steps (a)+(b), CI, R15, `analyze` | Yes | **Done, approved** (`8f6109f`, `1b4e19b`) |
-| 12b | Score fixes F1 (second exchange only if both alive, tempo γ) and F2 (self-KO cost), plus regression tests | No (pre-approved, if its checks pass) | **Done** (with one correction to the F1 formula, decided by the user; see the result under Order 12b) |
-| 13 | Bridge + paired win rates (E1–E3), tuning γ, a-floor and Q2 on tuning seeds only | **Yes**, with the results, before `cp-06` | **In progress** |
+| 12b | Score fixes F1/F2, `a_floor`, guardrail audit | No | **Done, accepted** (`f93bb0b`; the user's "KO keeps the bonus" correction accepted) |
+| 13 | Tuning, then the evaluation, **with amendments 13-A1…A5 applied before any evaluation game** | **Yes**, with the results, before `cp-06` | **In progress**: tuning step 1 done (γ 0.5, floor 0 leads); step 2 (`utility_scale`) running; then 13-A2, then the evaluation |
+| 14 | Hygiene after `cp-06`: move out of OneDrive, timing on AC, archive the logbook, golden-decision CI test, dex field | No (pre-approved envelope) | Queued |
+| 15 | Phase 7 design proposal + v1 policy backlog | **Yes**, after the proposal | Queued |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 7". The Advice section still applies.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 8" and the new standing rule "Autonomy envelope".
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -2594,9 +2595,9 @@ What's good:
 The Gen 1 and Gen 2 calculator timing tests ran at 8.5 and 8.8 ms against an 8 ms limit, **on battery**. Re-run them on AC power before
 `cp-06`. If they still fail on AC, report the medians and propose a new limit then. Don't change the limit now.
 
-## ▶ ACTIVE — Orders for Claude Code, batch 7 (do these in order, stopping where marked)
+## [Partly completed] Orders for Claude Code, batch 7 (Order 13 continues under batch 8's amendments)
 
-### Order 12b: the score fixes (pre-approved, no stop if the checks pass)
+### ✅ DONE — Order 12b: the score fixes (pre-approved, no stop if the checks pass) _(→ f93bb0b; accepted 2026-10-13)_
 On `task/06-orchestrator`:
 1. Make F1 (both parts, with γ a named parameter defaulting to 0.5), F2 (the self-faint charge), and F3's `a_floor` parameter
    (default 0). Recoil (A7) is optional.
@@ -2679,6 +2680,143 @@ Tuning, against max-damage only, 100 pairs per generation per setting (800 games
 The setting with the highest pooled win rate is frozen; a tie goes to the setting nearest the
 defaults (γ 0.5, `a_floor` 0, `utility_scale` 1). Nothing else is tried. The evaluation then
 runs once on the evaluation indices with the frozen setting.
+
+## Review of Order 12b and the mid-run report (2026-10-13, reviewer, for the user)
+
+**Order 12b: accepted.**
+- **The user's correction is right, and the reviewer's ruling was wrong.** The F1 formula as I ruled it made a knock-out
+  forfeit a good matchup's value (17 of 90 declined KOs). `stay = trade + γ·P(survive)·[(1 − k·act)·M + k·act·max(M, 0)]` is
+  the correct form. The test that "a KO never scores below the same damage without one" is the right guard, so keep it permanent.
+  The lesson for the process is that **measured behaviour beats a reviewer's formula.** The autonomy envelope below makes that the default.
+- **Guardrails:**
+  - Voluntary switches went from 34% to 20%.
+  - Thrown-away KOs are 0 by definition; the single Explosion case is a refused self-KO trade, correctly excluded.
+  - Self-KO advice went from 10 to 1, and that one is defensible (every other option scores below 0).
+- **The Gen 1 Desync Clause fix (`e2a556f`) is accepted**, with 0 false claims still on the ground-truth set. See 13-A2 about the tuning runs.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 8
+
+## Reviewer note on tuning step 1 (2026-10-13)
+
+**Claude Code's question ("raise the strict against-random pass mark first, or run as written?") is answered: amendment 13-A1
+replaces it.** Apply 13-A1…A5, then run the evaluation. Don't wait for anything else.
+
+Reading of the eight-setting table (100 pairs per gen against max-damage, tuning indices):
+
+- **The defaults lead:** γ 0.5 with no attack floor, at 77.8% pooled (74.7–80.5%). That is the best sign tuning can give, because the
+  pre-registered tie rule and the winner agree, so there is little winner's-curse risk in freezing it.
+- **The top five are within about 2 points** and inside each other's intervals, so the policy is not sensitive to γ in 0.3–0.7.
+  Only γ 1.0 is clearly worse, which confirms that F1's tempo factor matters.
+- **The attack floor (F3) never helped.** Keep `a_floor = 0`, and leave F3 to Phase 7's learned opponent model.
+- **Gen 1 is the weak spot,** at about 65% for every setting, against 74–85% elsewhere. It's insensitive to γ, so the cause is likely
+  Gen 1 mechanics the policy doesn't model, not the tuning. It is added to the Order 15 backlog as item 0 (below).
+- **13-A2 still applies.** Re-run the Gen 1 slice of the five settings that ran before `e2a556f`, then rebuild the table. Gen 1 is the
+  weakest gen, and the top five are 2 points apart, so same-code Gen 1 numbers could reorder them. If the leader is still γ 0.5 / floor
+  0, freeze it. If the order changes, apply the pre-written rule to the rebuilt table.
+- **Expectation for the evaluation:** a pass on E3.1 against max-damage is likely, given about 78% on tuning seeds, with
+  some regression to expect on fresh seeds. Report the real numbers, whatever they are.
+
+**Addition to the Order 15 backlog, item 0: Gen 1 diagnosis.** Before any new feature, take 50 lost Gen 1 *evaluation-adjacent*
+games (from the tuning range or a fresh diagnostic range; **never the evaluation range**) and tag the deciding turn of each:
+- full paralysis or freeze luck;
+- crits (high-crit moves, Speed-based crit rate);
+- partial trapping (Wrap, Bind, Fire Spin, Clamp);
+- Hyper Beam with no recharge after a KO;
+- Explosion's Defense halving;
+- status that the score undervalues (sleep);
+- a policy mistake.
+
+The tag counts decide which Gen 1 mechanic is worth modelling first.
+
+### Order 13, amendments 13-A1…A5. **Apply all of these before the first evaluation game.** Tuning may continue meanwhile.
+
+- **13-A1: replace pass mark E3.2 (against random).** As written, it needed the policy's lower bound to reach max-damage's own
+  win rate. Near the ceiling (max-damage won 21 of 24 scratch games) that demands roughly 97% or more, so it measures nearness to
+  100%, not skill. That was the reviewer's mistake. **New E3.2, non-inferiority:** per generation, the 95% interval of
+  *(policy's win rate − max-damage's win rate), both against random*, has a lower end above **−2 percentage points**. In plain
+  words: against easy opponents, the policy must not lose noticeably more often than greedy play does. Use the Newcombe/Wilson
+  interval for a difference of two proportions. E3.1 (beating max-damage head to head) remains **the** headline test, and E3.3 is unchanged.
+- **13-A2: clean tuning data.** The Gen 1 fix doesn't only touch games that crashed. It ignores a first move whenever it
+  repeats the side's last one (187 of 500 battles), so Gen 1 posteriors, and with them decisions, differed in the five settings
+  run before it. **Re-run only the Gen 1 slice (100 pairs) of those five settings** on the fixed code: about 1,000 games, roughly a seventh of
+  the tuning cost. Rebuild the eight-setting table from same-code results only, then pick by the pre-written rule. Do not
+  change the selection rule now that results are in.
+- **13-A3: quarantine instead of halting.** A new tracker bug must not kill a multi-hour run, and must not be hidden either.
+  On any exception in the harness or the tracker:
+  - save the seed, the full log and the traceback to `data/raw/quarantine/`;
+  - drop **the whole pair** from the scoring, so no partial pair biases the result;
+  - continue with the next pair.
+
+  Report the quarantine count per generation. **Health mark (added to E3.3): at most 0.5% of pairs quarantined per
+  generation.** Above that, the run is invalid. Stop, fix, and re-run that generation on its same indices. Every quarantined game
+  becomes a regression test after the run.
+- **13-A4: the burned-seed rule (only if E3 fails).** Evaluation indices 2,000,000–2,000,499 are used **once**. You may
+  analyse the evaluation games to diagnose a failure, but any change after that is version v1 and is judged on a **fresh** range
+  (3,000,000–3,000,499), written here before it runs. No re-running the old range with new code to "see if it passes now".
+- **13-A5: also report the pair-level view.** Give the mean pair score (0, 0.5 or 1 per pair) with a bootstrap 95% interval
+  (10,000 resamples, fixed seed) next to the game-level Wilson interval. Treating games as independent is conservative under pairing;
+  the pair view shows the real precision. The verdict stays on E3 as amended.
+
+Then carry on with Order 13 steps 3–5 as written, and **stop with the results** before `cp-06`.
+
+### Order 14: hygiene after `cp-06` is approved (pre-approved envelope, no stop unless a check fails)
+
+1. **Repository location (the user does this, with Claude Code checking):** close VS Code, move the repository from OneDrive to
+   `C:\dev\Poketrix`, and reopen it. The git remote is unaffected. Claude Code then confirms that `git status` is clean and `pytest` is green.
+2. **Timing on AC power** from the new location. If the Gen 1 and Gen 2 calculator tests still miss 8 ms, report the medians
+   and propose a limit. Don't change the limit without approval.
+3. **Archive the logbook** (approved exception to "avoid new documentation", because it is a move, not new content). Move the full
+   write-ups of Phases 0–6 and the completed orders into `docs/history/phases-0-6.md`, unchanged. Keep this file to:
+   - status at a glance and current orders;
+   - a one-table **decision index** (id → one line → link to the history anchor);
+   - the active orders, the advice section and the standing rules.
+
+   Target: under 400 lines. `CLAUDE.md` points to both files.
+4. **A8: a golden-decision replay test in CI.** Commit 2–3 full game transcripts per gen (both sides' streams with requests)
+   and the policy's recorded choices. A pure-Python test replays them through the tracker and the advisor and asserts that the decisions are identical.
+   This puts the whole decision pipeline under CI without Node or the simulator. Re-record only when the policy deliberately changes, and note it here.
+5. **Dex field:** add Showdown's `selfdestruct` flag to the dex snapshot, and replace the hard-coded five-move list with it, without
+   any behaviour change (the A8 test proves it).
+6. **Gen 1 desync, exact detection:** check whether the pinned simulator's protocol marks a Desync Clause substitution
+   (a `-message`, a `-hint` or a tag). If it does, use exact detection and stop ignoring the 187 first moves. Re-run the ground-truth
+   check (it must stay at 0 false claims). If it doesn't, keep the conservative rule and record why.
+
+### Order 15: Phase 7 design proposal, plus the v1 policy backlog. **STOP after the proposal.**
+
+Phase 7 replaces `heuristic-0` with a learned opponent-action model (XGBoost) trained on real replay decisions.
+Propose the following:
+- **Data:** per-decision snapshots from the 2,000 real replays (plus more, if useful, with a polite download), keyed by
+  `(battle, turn, decision_index)`. The label is attack, switch or status/utility. Features come only from information visible
+  at that moment. Split by battle, never by turn, so nothing leaks between train and test.
+- **Metrics against heuristic-0:** log-loss, Brier score and calibration, plus the **downstream** effect: the policy's
+  win rate against max-damage with the learned model in place of heuristic-0, on a fresh evaluation range.
+- **The v1 policy backlog**, each item to be judged on that fresh range:
+  1. **Opponent priority in move order:** P(their best move has priority), from the posterior (Gen 4: Sucker Punch,
+     ExtremeSpeed, Aqua Jet, Ice Shard, Bullet Punch, Mach Punch; in all gens: Quick Attack).
+  2. Recoil and Hyper Beam's recharge cost.
+  3. Set-up moves.
+  4. A second, independent baseline that doesn't use our estimator, so "beats max-damage" isn't only measured against ourselves.
+- **Human-play proxy:** agreement between our advice and the winning player's actual choices in real replays. It is cheap,
+  it uses no new data, and it is the first signal about play against people.
+
+## Standing rule added: the autonomy envelope (2026-10-13)
+
+So that review round trips aren't needed for routine work, Claude Code may act **without stopping** inside this envelope,
+logging each item here afterwards:
+- bug fixes in the tracker, parser or harness that come with a regression test, as long as ground truth stays at 0 false claims;
+- refactors with no behaviour change, proven by the existing tests and the golden-decision test (A8, once it exists);
+- tooling, logging, reports and documentation moves.
+
+Claude Code **must stop and ask** before changing any of these:
+- an approved formula or scoring term;
+- a schema field's meaning;
+- a pass mark or threshold;
+- the seed ranges;
+- the prior or its source;
+- anything that alters evaluation results after they are seen.
+
+When unsure, ask. And when measurement contradicts a reviewer ruling (as with F1), report it with the numbers. Don't
+follow the ruling silently.
 
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 

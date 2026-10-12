@@ -209,6 +209,8 @@ Known, deliberate gaps:
   `focusenergy`, `foresight`, …) plus `transform`.
 - No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
 
+**Autonomy envelope (2026-10-13):** routine bug fixes with regression tests, behaviour-neutral refactors and tooling may proceed without a stop; changes to formulas, schemas, pass marks, seeds or the prior must stop for approval. Full rule: `docs/PROGRESS_TRACKER.md` → "Standing rule added: the autonomy envelope".
+
 ## ▶ START HERE
 
 Read `docs/PROGRESS_TRACKER.md` → the **"▶ Current orders"** table at the top, then the matching **"▶ ACTIVE — Orders"** section and follow the orders in that
