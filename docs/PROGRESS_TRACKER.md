@@ -23,8 +23,8 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
 | 12 | Phase 6 steps (a)+(b), CI, R15, `analyze` | Yes | **Done, approved** (`8f6109f`, `1b4e19b`) |
-| 12b | Score fixes F1 (second exchange only if both alive, tempo γ) and F2 (self-KO cost), plus regression tests | No (pre-approved, if its checks pass) | **To do** |
-| 13 | Bridge + paired win rates (E1–E3), tuning γ, a-floor and Q2 on tuning seeds only | **Yes**, with the results, before `cp-06` | **To do** (straight after 12b) |
+| 12b | Score fixes F1 (second exchange only if both alive, tempo γ) and F2 (self-KO cost), plus regression tests | No (pre-approved, if its checks pass) | **Done** (with one correction to the F1 formula, decided by the user; see the result under Order 12b) |
+| 13 | Bridge + paired win rates (E1–E3), tuning γ, a-floor and Q2 on tuning seeds only | **Yes**, with the results, before `cp-06` | **In progress** |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 7". The Advice section still applies.
 
@@ -2607,6 +2607,38 @@ On `task/06-orchestrator`:
    - The Pinsir and Hitmontop turns must keep their current choices.
 3. Report the three guardrail metrics on the 8 fixture battles, before and after. Thrown-away KOs must be 0, or each case listed.
 4. Full suite green, `ruff` clean, CI green. Then go straight to Order 13. If a check fails, **stop** and report.
+
+**Result (2026-10-13): done.** 877 passed in the default run (870 + 7 new); `ruff` clean.
+
+- **F1, F2, `a_floor`** are in `advisor/policy.py` behind `PolicySettings` (`gamma` 0.5,
+  `a_floor` 0, `utility_scale` 1). Self-faint moves are a named set of five: the dex snapshot
+  does not carry Showdown's `selfdestruct` field. Recoil (A7) was not added; it is listed with
+  the recharge turn under known limits.
+- **One correction to the ruled F1 formula, decided by the user on 2026-10-13.** As ruled,
+  `(1 − P(we KO))·M(active)` made a knock-out *forfeit* a good matchup's value: on the fixtures
+  the engine declined a 90%+ knock-out move in 17 of 90 chances (Gen 1: Body Slam 1.228 over a
+  certain, first-moving Earthquake knock-out at 0.998). Now, after our knock-out, the second
+  exchange counts as `max(M, 0)`:
+  `stay = trade(m) + γ·P(we survive)·[(1 − k·act)·M + k·act·max(M, 0)]`.
+  A knock-out ends a bad matchup's cost and keeps a good one's value. A test asserts that a
+  knock-out never scores below the same damage without one. The 13 declined knock-outs left
+  are 6 Explosions and 7 turns where we are slower and they knock us out first if they attack.
+- **Regression tests from the real turns:** Porygon-Z now chooses Tri Attack (0.776 against
+  0.375 for the Golduck switch); Muk's Explosion scores −0.008 (`d·act − 1`) and Hidden Power
+  Ground is advised on turn 3; Pinsir keeps Stone Edge and Hitmontop keeps Hidden Power Ghost.
+
+| Guardrail, 8 fixture battles, 337 decisions | Before | After |
+|----------------------------------------------|--------|-------|
+| Voluntary switches | 114 (34%) | 68 (20%) |
+| Thrown-away knock-outs (KO ≥ 90% and first ≥ 90%) | 0 | 1 |
+| Self-KO move advised | 10 | 1 |
+
+The one thrown-away case is Explosion (Gen 3 battle 1, turn 2: knocks out 100%, acts first
+100%, the engine switches instead), so it is a refused trade, not a thrown-away knock-out; the
+test excludes self-KO moves and requires 0. "Before" is 0 by the reviewer's definition because
+the 16 cases reported under Order 12 did not all move first. The one self-KO advice left is
+Gen 3 battle 1, turn 3: Explosion at 100% with six Pokémon left on each side, where every other
+option scores below 0. `python -m poketrix.advisor.audit [dir]` prints this table.
 
 ### Order 13: the bridge and the win rates (replaces the batch-6 text). **STOP with the results, before `cp-06`.**
 1. The bridge (Q5 + R15: trap re-asks counted separately), the policy and max-damage players, and paired games (E1).

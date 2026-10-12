@@ -28,7 +28,7 @@ from poketrix.showdown import TurnSnapshot
 from poketrix.uncloak import SetPrior, load_prior
 
 from . import stages
-from .policy import Inputs, by_power, decide, trap_risk
+from .policy import DEFAULT_SETTINGS, Inputs, PolicySettings, by_power, decide, trap_risk
 from .situation import Deadline, Situation
 from .writer import NO_NUMBERS, Brief, TemplateWriter, Writer
 
@@ -57,7 +57,9 @@ class TurnAdvisor:
         priors: Callable[[int], SetPrior] = load_prior,
         clock: Callable[[], float] = perf_counter,
         budget_ms: float = TURN_BUDGET_MS,
+        settings: PolicySettings = DEFAULT_SETTINGS,
     ) -> None:
+        self._settings = settings
         self._writer = writer or TemplateWriter()
         self._priors = priors
         self._clock = clock
@@ -149,9 +151,8 @@ class TurnAdvisor:
             return result(SubsystemStatus.ERROR, error=f"{type(error).__name__}: {error}")
         return result(status, payload=payload, error=problem)
 
-    @staticmethod
-    def _decide(situation: Situation, inputs: Inputs, numbers: dict[str, float]):
-        decision = decide(situation, inputs, numbers)
+    def _decide(self, situation: Situation, inputs: Inputs, numbers: dict[str, float]):
+        decision = decide(situation, inputs, numbers, self._settings)
         if decision.reason != "limited":
             return decision, SubsystemStatus.OK, None
         # Nothing could be scored: fall back to the request alone.

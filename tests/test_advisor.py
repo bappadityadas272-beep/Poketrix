@@ -6,7 +6,8 @@ import re
 
 import pytest
 
-from poketrix.advisor import Deadline, TurnAdvisor, stages
+from poketrix.advisor import Deadline, PolicySettings, TurnAdvisor, stages
+from poketrix.advisor.audit import Guardrails, audit
 from poketrix.advisor.latency import measure, percentile
 from poketrix.advisor.pipeline import NO_SETS, NO_TARGET, TRANSFORMED
 from poketrix.advisor.policy import Inputs, by_power, decide, hazard_share, trap_risk
@@ -157,9 +158,10 @@ def test_the_score_is_the_documented_formula():
         first={0: {"dragonclaw": 1.0}}, threats={0: threat},
         opponent=ActionPrediction(p_attack=0.8, p_switch=0.2, p_utility=0.0, model_version="t"),
     )
-    # trade = 0.6 - 0.8*0.5*(1 - 0.2) = 0.28; M = 0.6 - 0.5*0.8 = 0.20; survive = 0.936
+    # trade = 0.6 - 0.8*0.5*(1 - 0.2) = 0.28; M = 0.6 - 0.5*0.8 = 0.20; survive = 0.936;
+    # M is positive, so the second exchange is worth gamma * survive * M either way.
     assert decision.choice.move_id == "dragonclaw"
-    assert decision.choice.score == pytest.approx(0.28 + 0.936 * 0.20)
+    assert decision.choice.score == pytest.approx(0.28 + 0.5 * 0.936 * 0.20)
     assert numbers["score.dragonclaw"] == decision.choice.score
     unscored = [o.move_id for o in decision.options if o.score is None]
     assert sorted(unscored) == ["earthquake", "substitute", "swordsdance"]  # nothing known: last
@@ -175,8 +177,93 @@ def test_ties_go_to_the_knockout_then_accuracy_then_request_order():
 
     assert order(stoneedge=0.0, earthquake=0.0) == ["earthquake", "stoneedge"]  # 100% before 80%
     assert order(waterfall=0.0, earthquake=0.0) == ["earthquake", "waterfall"]  # request order
-    # A knock-out chance raises the score itself, so it never comes to a tie-break here.
+    # With nothing known of their attack the scores are equal: the knock-out chance decides.
     assert order(earthquake=0.0, stoneedge=0.3)[0] == "stoneedge"
+
+
+def line_scores(k: float, matchup_is_good: bool, **settings):
+    """Scores of two moves that remove the same share, one of which may knock out."""
+    snapshot = position([ours("swampert", has_move="stoneedge")], "magnezone")
+    threat = ThreatReport(attacker_species="magnezone", defender_species="swampert",
+                          expected_best_share=0.2 if matchup_is_good else 0.9,
+                          p_ko_best_move=0.0)
+    offence = {0: [MoveOutlook(move_id="earthquake", expected_share=0.6, ko_probability=k),
+                   MoveOutlook(move_id="waterfall", expected_share=0.6, ko_probability=0.0)]}
+    situation = Situation(snapshot, PRIOR, DEX)
+    decision = decide(situation, Inputs(offence=offence, threats={0: threat},
+                                        first={0: {"earthquake": 1.0, "waterfall": 1.0}}),
+                      {}, PolicySettings(**settings))
+    return {o.move_id: o.score for o in decision.options if o.score is not None}
+
+
+def test_a_knockout_never_scores_below_the_same_damage_without_one():
+    """F1: a knock-out ends a bad matchup's cost and never forfeits a good one's value."""
+    for good in (True, False):
+        scores = line_scores(k=1.0, matchup_is_good=good)
+        assert scores["earthquake"] > scores["waterfall"]
+    # In a good matchup the second exchange is worth the same with or without the knock-out;
+    # what the knock-out adds is the hit we no longer take.
+    good = line_scores(k=1.0, matchup_is_good=True)
+    assert good["earthquake"] - good["waterfall"] == pytest.approx(0.2)
+
+
+def test_tempo_and_the_attack_floor_are_settings():
+    slow = line_scores(k=0.0, matchup_is_good=True, gamma=1.0)["waterfall"]
+    fast = line_scores(k=0.0, matchup_is_good=True, gamma=0.3)["waterfall"]
+    assert slow - fast == pytest.approx(0.7 * 0.4)  # M = 0.6 - 0.2 = 0.4, and we survive
+    snapshot = position([ours("garchomp"), ours("skarmory")], "skarmory")
+    assumed = advise(snapshot).opponent.payload.p_attack
+    assert assumed < 0.5  # Skarmory's sets are mostly status moves
+    plain = advise(snapshot).numbers["score.earthquake"]
+    floored = advise(snapshot, settings=PolicySettings(a_floor=0.5)).numbers["score.earthquake"]
+    assert floored < plain  # taking their hit seriously lowers every stay
+
+
+def test_a_move_that_faints_its_user_is_charged_everything_it_has_left():
+    """F2, on the real turns: Gen 2 fixture battle 0, Muk against Piloswine."""
+    decisions = {
+        s.turn: s for s in parse_battle(load_battles(2)[0]["player"]).snapshots
+        if s.state.me.request is not None and s.decision_index == 0
+    }
+    for turn in (3, 4, 5, 6):
+        report = advise(decisions[turn])
+        if "explosion" not in decisions[turn].state.me.request.available_moves:
+            continue
+        index = decisions[turn].state.me.active_index
+        dealt = report.numbers[f"our.{index}.explosion.share"]
+        assert dealt == pytest.approx(1.0)
+        # d * (chance to act) - 1: a certain knock-out that costs our own Pokémon is worth ~0.
+        assert -0.1 < report.numbers["score.explosion"] <= dealt - 1.0 + 1e-9
+        assert report.recommendation.move_id != "explosion"
+    assert advise(decisions[3]).recommendation.move_id == "hiddenpowerground"
+
+
+@pytest.mark.parametrize(
+    ("gen", "turn", "expected"),
+    [
+        (4, 2, "triattack"),  # F1: a certain knock-out, not the switch to Golduck
+        (4, 9, "stoneedge"),  # Pinsir against Ho-Oh: unchanged
+        (3, 6, "hiddenpowerghost"),  # Hitmontop against Primeape: unchanged
+    ],
+)
+def test_real_turns_keep_their_right_answers(gen, turn, expected):
+    snapshot = next(
+        s for s in parse_battle(load_battles(gen)[0]["player"]).snapshots
+        if s.turn == turn and s.state.me.request is not None
+    )
+    assert advise(snapshot).recommendation.move_id == expected
+
+
+@pytest.mark.slow
+def test_no_knockout_is_thrown_away_on_the_fixture_battles():
+    total = Guardrails()
+    for gen in GENS:
+        total.merge(audit(gen))
+    assert total.decisions > 300
+    # The one case left is Explosion: "knocking out" at the price of our own Pokémon.
+    assert [case for case in total.thrown_away if "self-KO" not in case] == []
+    assert total.voluntary_switches / total.decisions < 0.25
+    assert len(total.self_ko) <= 1
 
 
 def test_entry_hazards_are_exact_and_the_trap_risk_comes_from_the_ability():

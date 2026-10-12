@@ -6,26 +6,36 @@ knock-out is 1 whatever was left and damage past a knock-out counts for nothing.
     d, k    our move: expected share of their remaining HP it removes; chance it knocks out
     D, K    their best move against one of ours: expected share; chance it knocks out
     f       chance that we act first
-    a       chance that they attack this turn
+    a       chance that they attack this turn (never below `a_floor`)
+    γ       tempo: what a second exchange is worth next to the one happening now
 
-    trade(m)  = d·(1 − a·K·(1 − f)) − a·D·(1 − k·f)
-                We deal our damage unless they knock us out first; we take theirs unless we
-                knock them out first.
+    act(m)    = 1 − a·K·(1 − f)            we get to act: they do not knock us out first
+    trade(m)  = d·act − a·D·(1 − k·f)
+                We deal our damage if we get to act; we take theirs unless we knock them out
+                first.
     M(X)      = the best trade(m) of X's moves with a = 1: how X fares against their Pokémon.
-    stay, m   : S = trade(m) + P(we survive the turn)·M(active)
-    switch, X : S = −a·D(X) − hazard(X) + P(X survives the hit)·M(X)
+    stay, m   : S = trade(m) + γ·P(we survive)·[(1 − k·act)·M + k·act·max(M, 0)]
+                The second exchange is against their Pokémon if it is still there (M, with
+                M = M(active)). If we knocked it out, we cannot be worse off than still
+                facing it: a knock-out ends a bad matchup's cost and keeps a good one's value.
+    switch, X : S = −a·D(X) − hazard(X) + γ·P(X survives the hit)·M(X)
     forced    : S = M(X) − hazard(X)
 
+A move that makes its user faint (Explosion, Self-Destruct) costs everything we have left:
+trade(m) = d·act − 1, and there is no second exchange.
+
 Worked example. Our move removes d = 0.60 and knocks out k = 0.20 of the time; we are faster
-(f = 1); they attack a = 0.80 of the time for D = 0.50, K = 0.10. Then
-trade = 0.60·(1 − 0.80·0.10·0) − 0.80·0.50·(1 − 0.20·1) = 0.60 − 0.32 = 0.28. With a = 1,
-M = 0.60 − 0.50·0.80 = 0.20; we survive with 1 − 0.80·0.10·(1 − 0.20) = 0.936; so
-S = 0.28 + 0.936·0.20 = 0.467.
+(f = 1); they attack a = 0.80 of the time for D = 0.50, K = 0.10; γ = 0.5. Then act = 1 and
+trade = 0.60 − 0.80·0.50·(1 − 0.20) = 0.28. With a = 1, M = 0.60 − 0.50·0.80 = 0.20. We
+survive with 1 − 0.80·0.10·(1 − 0.20) = 0.936. M is positive, so the second exchange is
+worth M whether or not we knocked it out: S = 0.28 + 0.5·0.936·0.20 = 0.374. Had M been
+−0.20, only the 0.80 of the time their Pokémon is still there would count:
+S = 0.28 + 0.5·0.936·0.80·(−0.20) = 0.205.
 
 Approximations, all deliberate for v0: `trade` assumes they stay in (when they switch, our
 hit lands on something unknown); `M` uses the HP from before the exchange; their move is
-taken to have no priority; set-up moves, PP, weather turns and Gen 1 trapping moves that stop
-the target from acting are not modelled. A possible trapping ability does not lower a
+taken to have no priority; recoil, a recharge turn, set-up moves, PP, weather turns and Gen 1
+trapping moves that stop the target from acting are not modelled. A possible trapping ability does not lower a
 switch's score: the simulator refuses such a switch and asks again without costing the turn
 (R15), so the risk is reported, not scored.
 
@@ -58,6 +68,21 @@ from poketrix.schemas import (
 )
 
 from .situation import Situation
+
+
+@dataclass(frozen=True)
+class PolicySettings:
+    """The policy's tunable numbers. Tuned on the tuning seeds only, never on evaluation games."""
+
+    gamma: float = 0.5  # tempo: the weight of the second exchange
+    a_floor: float = 0.0  # their attack chance is taken to be at least this
+    utility_scale: float = 1.0  # multiplies every status-move value below
+
+
+DEFAULT_SETTINGS = PolicySettings()
+# Moves whose user faints. Showdown marks them `selfdestruct`; the dex snapshot does not carry
+# that field, and these five are all there are in Gens 1-4.
+SELF_FAINT = frozenset({"explosion", "selfdestruct", "memento", "healingwish", "lunardance"})
 
 # ---- provisional constants (decision Q2): tuned on the tuning seeds only, in Order 13.
 RECOVERY = {
@@ -183,13 +208,18 @@ class _Line:
     f: float
     damaging: bool
 
+    @property
+    def self_faint(self) -> bool:
+        return self.move_id in SELF_FAINT
+
 
 class _Scorer:
-    def __init__(self, situation: Situation, inputs: Inputs) -> None:
+    def __init__(self, situation: Situation, inputs: Inputs, settings: PolicySettings) -> None:
         self.situation = situation
         self.inputs = inputs
+        self.settings = settings
         opponent = inputs.opponent
-        self.a = 1.0 if opponent is None else opponent.p_attack
+        self.a = max(settings.a_floor, 1.0 if opponent is None else opponent.p_attack)
 
     def lines(self, index: int) -> list[_Line]:
         """The scoreable moves of one of our Pokémon. Status moves only for the active one:
@@ -203,7 +233,9 @@ class _Scorer:
                 found.append(_Line(outlook.move_id, outlook.expected_share,
                                    outlook.ko_probability, f, True))
             elif active and outlook.unsupported_reason is None:
-                value = _utility_value(self.situation, outlook.move_id)
+                value = self.settings.utility_scale * _utility_value(
+                    self.situation, outlook.move_id
+                )
                 if value > 0:
                     found.append(_Line(outlook.move_id, value, 0.0, f, False))
         return found
@@ -213,9 +245,15 @@ class _Scorer:
         report = self.inputs.threats.get(index)
         return (0.0, 0.0) if report is None else (report.expected_best_share, report.p_ko_best_move)
 
+    def acts(self, line: _Line, index: int, a: float) -> float:
+        """The chance that we get to use the move: they do not knock us out first."""
+        return 1 - a * self.their(index)[1] * (1 - line.f)
+
     def trade(self, line: _Line, index: int, a: float) -> float:
-        d_them, k_them = self.their(index)
-        return line.d * (1 - a * k_them * (1 - line.f)) - a * d_them * (1 - line.k * line.f)
+        dealt = line.d * self.acts(line, index, a)
+        if line.self_faint:
+            return dealt - 1.0  # whatever happens, our Pokémon is gone
+        return dealt - a * self.their(index)[0] * (1 - line.k * line.f)
 
     def matchup(self, index: int) -> float | None:
         """M(X): None when none of X's moves could be evaluated."""
@@ -226,9 +264,15 @@ class _Scorer:
 
     def stay(self, line: _Line) -> float:
         index = self.situation.me.active_index
+        now = self.trade(line, index, self.a)
+        if line.self_faint:
+            return now
         _, k_them = self.their(index)
         survive = 1 - self.a * k_them * (1 - line.k * line.f)
-        return self.trade(line, index, self.a) + survive * (self.matchup(index) or 0.0)
+        knocked_out = line.k * self.acts(line, index, self.a)
+        matchup = self.matchup(index) or 0.0
+        after = (1 - knocked_out) * matchup + knocked_out * max(matchup, 0.0)
+        return now + self.settings.gamma * survive * after
 
     def switch(self, index: int) -> float | None:
         matchup = self.matchup(index)
@@ -238,13 +282,15 @@ class _Scorer:
         if self.situation.request.force_switch:
             return matchup - hazard
         d_them, k_them = self.their(index)
-        return -self.a * d_them - hazard + (1 - self.a * k_them) * matchup
+        again = self.settings.gamma * (1 - self.a * k_them) * matchup
+        return -self.a * d_them - hazard + again
 
 
-def decide(situation: Situation, inputs: Inputs, numbers: dict[str, float]) -> Decision:
+def decide(situation: Situation, inputs: Inputs, numbers: dict[str, float],
+           settings: PolicySettings = DEFAULT_SETTINGS) -> Decision:
     """Score every legal action and order them: score, then knock-out chance, then accuracy,
     then a move before a switch, then the request's own order."""
-    request, scorer = situation.request, _Scorer(situation, inputs)
+    request, scorer = situation.request, _Scorer(situation, inputs, settings)
     lines = {line.move_id: line for line in scorer.lines(situation.me.active_index)}
     ranked = []
     for position, move_id in enumerate(request.available_moves):
