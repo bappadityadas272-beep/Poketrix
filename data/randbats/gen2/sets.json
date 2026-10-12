@@ -1,4 +1,4 @@
-{"source":{"generator":"pokemon-showdown","version":"0.11.11","format":"gen2randombattle","seed":20261101,"teams":100000,"default_spread":{"iv":15,"ev":65535}},"sets":[
+{"source":{"generator":"pokemon-showdown","version":"0.11.11","commit":"942cda71d14bf0618bd57991708a2e2734b6daba","commit_date":"2026-10-09","format":"gen2randombattle","seed":20261101,"teams":100000,"default_spread":{"iv":15,"ev":65535}},"sets":[
 {"species":"aerodactyl","level":69,"moves":["ancientpower","curse","earthquake","hiddenpowerflying"],"item":"leftovers","ability":null,"ivs":{"atk":12,"def":13},"evs":{},"count":1336},
 {"species":"aerodactyl","level":69,"moves":["curse","earthquake","hiddenpowerrock","rest"],"item":"leftovers","ability":null,"ivs":{"atk":13,"def":12},"evs":{},"count":1289},
 {"species":"aerodactyl","level":69,"moves":["curse","earthquake","hiddenpowerrock","whirlwind"],"item":"leftovers","ability":null,"ivs":{"atk":13,"def":12},"evs":{},"count":1219},

@@ -105,6 +105,14 @@ def test_a_second_swap_says_nothing_about_a_set_that_was_already_swapped():
     assert tracker.anomalies == []
 
 
+def test_trick_between_two_holders_of_the_same_item_leaves_both_holding_it():
+    tracker = play("|move|p2a: Swampert|Trick|p1a: Garchomp",
+                   "|-item|p1a: Garchomp|Leftovers|[from] move: Trick",
+                   "|-item|p2a: Swampert|Leftovers|[from] move: Trick")
+    assert active(tracker, P1).revealed_item == active(tracker, P2).revealed_item == "leftovers"
+    assert evidence(tracker, P1).item == evidence(tracker, P2).item == "leftovers"
+
+
 def test_frisk_in_both_line_shapes():
     gen4 = play("|-item||Leftovers|[from] ability: Frisk|[of] p1a: Banette", p1="Banette, L88, M")
     assert evidence(gen4, P2).item == "leftovers" and evidence(gen4, P1).ability == "frisk"
