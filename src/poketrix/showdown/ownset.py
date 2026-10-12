@@ -5,13 +5,21 @@ them. The spread is looked up in the Random Battle set table: the first spread o
 that reproduces the request's stats exactly (and, for Hidden Power, its type).
 """
 
+from collections.abc import Sequence
+from typing import Protocol
+
 from poketrix.calc import compute_stats, hidden_power
 from poketrix.dex import Dex, UnknownDexEntryError
-from poketrix.schemas import PokemonSet, Species, Stat, StatSpread, rules_for
+from poketrix.schemas import PokemonSet, PriorSet, Species, Stat, StatSpread, rules_for
 from poketrix.schemas.pokemon import UNTYPED_HIDDEN_POWER
-from poketrix.uncloak import SetPrior
 
 from .events import RequestPokemon
+
+
+class SetSource(Protocol):
+    """Where known sets, and so their spreads, come from. The uncloaker's `SetPrior` is one."""
+
+    def sets_for(self, species_id: str) -> Sequence[PriorSet]: ...
 
 
 def set_move_id(dex: Dex, sent: str) -> str:
@@ -23,7 +31,7 @@ def set_move_id(dex: Dex, sent: str) -> str:
 
 
 def own_set(
-    seen: RequestPokemon, species: Species, dex: Dex, prior: SetPrior
+    seen: RequestPokemon, species: Species, dex: Dex, prior: SetSource
 ) -> tuple[PokemonSet, bool]:
     """The set, and whether its spread reproduces the request's stats.
 

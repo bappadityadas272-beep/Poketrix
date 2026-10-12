@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from poketrix.calc import compute_stats
 from poketrix.dex import Dex
-from poketrix.schemas import Generation, PlayerSlot, Stat, Status
+from poketrix.schemas import FORCED_MOVES, Generation, PlayerSlot, SideState, Stat, Status
 from poketrix.showdown import events as ev
 from poketrix.showdown import parse_battle, parse_line
 from poketrix.showdown.ownset import own_set, set_move_id
@@ -143,6 +143,8 @@ def test_every_decision_gets_a_snapshot_with_its_request():
     assert record.player is P1 and record.request_disagreements == {}
     first, second, replacement, third, last = record.snapshots
     assert [s.turn for s in record.snapshots] == [1, 2, 2, 3, 3]
+    # (turn, decision_index) names each one: 0 is the turn's choice, 1 the replacement in it.
+    assert [s.decision_index for s in record.snapshots] == [0, 0, 1, 0, 1]
 
     me = first.state.me
     assert first.state.perspective is P1 and len(me.team) == 2  # the two in the request
@@ -203,6 +205,52 @@ def test_forced_choices_and_borrowed_moves_validate():
 
     with pytest.raises(ValidationError, match="not in known set"):
         parse_battle(battle(request((PORYGON_Z, {}), (AMBIPOM, {}), active=theirs)))
+
+
+@pytest.mark.parametrize("forced", sorted(FORCED_MOVES))
+def test_d1_a_forced_choice_is_legal_though_it_is_in_no_set(forced):
+    only = {"moves": [{"move": forced.title(), "id": forced}]}
+    record = parse_battle(battle(request((PORYGON_Z, {}), (AMBIPOM, {}), active=only)))
+    assert record.snapshots[0].state.me.request.available_moves == [forced]
+
+
+def test_d1_a_mimicked_move_is_legal_while_it_is_held():
+    mimicked = [*MOVES[:3], {"move": "Surf", "id": "surf", "pp": 5, "maxpp": 5}]
+    record = parse_battle(battle(
+        request((PORYGON_Z, {}), (AMBIPOM, {}), active={"moves": MOVES}),
+        "|-activate|p1a: Porygon-Z|move: Mimic|Surf",
+        "|turn|2",
+        request((PORYGON_Z, {}), (AMBIPOM, {}), active={"moves": mimicked}),
+    ))
+    me = record.snapshots[-1].state.me
+    assert "mimic" in me.active.volatiles
+    assert me.request.available_moves == ["icebeam", "hiddenpowerfighting", "surf"]
+
+
+def _side_with(record, **changes):
+    """Our side of the first snapshot, validated again with some fields replaced."""
+    side = record.snapshots[0].state.me.model_dump()
+    side["request"] |= changes.pop("request", {})
+    return SideState.model_validate(side | changes)
+
+
+def test_d1_an_untyped_hidden_power_stands_for_the_typed_one():
+    record = parse_battle(battle(request((PORYGON_Z, {}), (AMBIPOM, {}), active={"moves": MOVES})))
+    side = _side_with(record, request={"available_moves": ["hiddenpower", "icebeam"]})
+    assert side.request.available_moves == ["hiddenpower", "icebeam"]
+    with pytest.raises(ValidationError, match="not in known set"):
+        _side_with(record, request={"available_moves": ["hiddenpower", "surf"]})
+
+
+def test_d1_borrowed_moves_are_excused_for_the_active_pokemon_only():
+    record = parse_battle(battle(request((PORYGON_Z, {}), (AMBIPOM, {}), active={"moves": MOVES})))
+    team = record.snapshots[0].state.me.model_dump()["team"]
+    offered = {"available_moves": ["earthquake"]}
+    team[1]["volatiles"] = ["transform"]  # on the bench: excuses nothing
+    with pytest.raises(ValidationError, match="not in known set"):
+        _side_with(record, team=team, request=offered)
+    team[1]["volatiles"], team[0]["volatiles"] = [], ["transform"]
+    assert _side_with(record, team=team, request=offered).request.available_moves == ["earthquake"]
 
 
 # --------------------------------------------------------------------------- ground truth

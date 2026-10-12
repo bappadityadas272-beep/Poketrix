@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-12 (Task 05 step 2 approved; D1–D5 and R8 decided; orders 9–11 issued)
+Last updated: 2026-10-13 (Order 9 done: `cp-05` merged and tagged; Orders 10–11 next)
 
 ## Status at a glance
 
@@ -11,12 +11,12 @@ Last updated: 2026-10-12 (Task 05 step 2 approved; D1–D5 and R8 decided; order
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | Steps 1 and 2 **approved**; merge + tag (Order 9), then the prior rebuild (Order 10) | `cp-05`, `cp-05b` |
+| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode); the prior rebuild follows (Order 10) | `cp-05`, `cp-05b` pending |
 | 6 | Orchestrator + decision policy + synthesis guardrail | Next: design proposal (Order 11) | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 731 passing on `main`. On `task/05-showdown-parser` (`76c6328`): 840 passing in the default run plus 8 of 8 with `pytest -m timing` (reviewer run, 2026-10-12). `ruff` is clean.
+Tests: 846 passing on `main` (`cp-05`) in the default run, plus 8 of 8 with `pytest -m timing`. `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
@@ -24,7 +24,7 @@ Tests: 731 passing on `main`. On `task/05-showdown-parser` (`76c6328`): 840 pass
 |-------|------|-------|--------|
 | 7 | Test hygiene (R9/R11/R12/R13) | No | **Done** (`e8c35e9`) |
 | 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
-| 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **To do** |
+| 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **Done** (`cp-05`; see the result under Order 9) |
 | 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **To do** |
 | 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **To do** |
 
@@ -2112,6 +2112,16 @@ Verdict: **APPROVED.** I checked the following on the user's machine (`76c6328`)
 3. Run `git switch main`, then `git merge --no-ff task/05-showdown-parser`, then `git tag -a cp-05 -m "Showdown parser: spectator + player mode, evidence, staleness"`.
    Then update `docs/CHECKPOINTS.md` and `README.md`, mark Phase 5 as done in the status table, and run `git push origin main --tags`.
 4. Mark Order 9 as Done in "▶ Current orders".
+
+**Result (2026-10-13): done, merged and tagged `cp-05`.** 846 passed in the default run (840 + 6
+new); `ruff` clean.
+
+| Item | What was done |
+|------|---------------|
+| D2 | `TurnSnapshot.decision_index`: 0 for the turn's main choice, 1 and up for replacements chosen during the turn. The closing snapshot of a log takes the next index, so `(turn, decision_index)` is unique over every snapshot. A spectator log has 0 everywhere except that closing snapshot. |
+| D1 | One test per case with a real request: each of `struggle`, `recharge`, `fight`; a move held through Mimic; an untyped `hiddenpower` standing for the typed one (and still rejecting a foreign move beside it). A fourth test shows `BORROWS_MOVES` excuses the active Pokémon only: the same volatile on a benched Pokémon excuses nothing. |
+| A1 | Applied. `ownset.py` takes a `SetSource` protocol (`sets_for`), and the tracker's default source imports the prior on first use. Importing `poketrix.showdown` no longer loads `poketrix.uncloak`; a spectator log never does. |
+| Timing | `pytest -m timing`: 8 of 8 passed. The laptop was on battery (66%) at 14% CPU load, so not the AC-power run the order asked for. Medians: parsing 0.008 ms per log line; one posterior update 0.53 ms (41 hypotheses); a whole player-mode battle with 33 decisions 29 ms. |
 
 ### Order 10: rebuild the prior from Showdown's current source (R8)
 The user is told about the download size in the reviewer's message. If the user said no, skip this order and mark it "Skipped".

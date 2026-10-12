@@ -31,6 +31,9 @@ class TurnSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     turn: int = Field(ge=1)
+    # Position within the turn: 0 is the turn's main choice, 1 and up are replacements chosen
+    # during it (and the closing snapshot). `(turn, decision_index)` identifies a snapshot.
+    decision_index: int = Field(default=0, ge=0)
     final: bool = False
     state: GameState
     evidence: tuple[PokemonEvidence, ...]
@@ -52,7 +55,7 @@ class BattleRecord(BaseModel):
 
 
 def _snapshot(tracker: BattleTracker, perspective: PlayerSlot | None, events: list[Event],
-              final: bool = False) -> TurnSnapshot:
+              decision_index: int, final: bool = False) -> TurnSnapshot:
     evidence = tuple(
         PokemonEvidence(
             player=slot, team_index=index, species_id=tracker.set_species_id(slot, index),
@@ -61,7 +64,8 @@ def _snapshot(tracker: BattleTracker, perspective: PlayerSlot | None, events: li
         for (slot, index), found in tracker.evidence().items()
     )
     return TurnSnapshot(
-        turn=tracker.turn, final=final, state=tracker.state(perspective), evidence=evidence,
+        turn=tracker.turn, decision_index=decision_index, final=final,
+        state=tracker.state(perspective), evidence=evidence,
         events=tuple(events),
     )
 
@@ -81,7 +85,9 @@ def parse_battle(
 
     def take(final: bool = False) -> None:
         nonlocal pending, turn_began
-        snapshots.append(_snapshot(tracker, perspective, pending, final))
+        same_turn = snapshots and snapshots[-1].turn == tracker.turn
+        index = snapshots[-1].decision_index + 1 if same_turn else 0
+        snapshots.append(_snapshot(tracker, perspective, pending, index, final))
         pending, turn_began = [], False
 
     for line in text.splitlines():

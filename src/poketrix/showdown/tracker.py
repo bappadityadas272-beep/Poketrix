@@ -35,7 +35,6 @@ from poketrix.schemas import (
     move_matches,
     rules_for,
 )
-from poketrix.uncloak import SetPrior, load_prior
 
 from . import events as ev
 from .evidence import (
@@ -44,7 +43,7 @@ from .evidence import (
     EvidenceBook,
     chose_the_move,
 )
-from .ownset import own_set
+from .ownset import SetSource, own_set
 
 _MAX_TEAM_SIZE = 6
 _STANDARD_DURATION = 5  # turns of weather, screens, Trick Room and Gravity without an item
@@ -127,8 +126,15 @@ class _Attack:
     life_orb_recoil: bool = False
 
 
+def _random_battle_sets(gen: Generation) -> SetSource:
+    """The default source of spreads. Imported on first use: a spectator's log never needs it."""
+    from poketrix.uncloak import load_prior
+
+    return load_prior(gen)
+
+
 class BattleTracker:
-    def __init__(self, priors: Callable[[Generation], SetPrior] = load_prior) -> None:
+    def __init__(self, priors: Callable[[Generation], SetSource] = _random_battle_sets) -> None:
         self.gen: Generation | None = None
         self.player: PlayerSlot | None = None  # whose requests the log carries; None: a spectator
         # What a request said differently from what the log had shown, by kind. Empty when the
