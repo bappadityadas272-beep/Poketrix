@@ -8,6 +8,11 @@ Every game is one JSON line in the output file, so a run can be stopped and star
 games already in the file are skipped. Results belong outside the repository; a relative
 `--out` goes under the cache directory (POKETRIX_CACHE_DIR, else %LOCALAPPDATA%/poketrix-cache).
 
+A pair in which anything raises is quarantined, not fatal: its seed, both sides' logs and the
+traceback go to data/raw/quarantine/ (git-ignored), the whole pair is left out of the scoring,
+and the run goes on. The report counts quarantined pairs; more than 0.5% of a generation's
+pairs makes the run invalid.
+
 Which pokemon-showdown plays is chosen by scripts/randbats/simulator.mjs (POKETRIX_SHOWDOWN_DIR).
 """
 
@@ -15,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import traceback
 from dataclasses import asdict
 from pathlib import Path
 
@@ -24,6 +30,7 @@ from .play import Bridge, GameResult, MaxDamagePlayer, Player, PolicyPlayer
 from .report import print_report
 
 MATCHES = ("policy-maxdamage", "policy-random", "maxdamage-random")
+QUARANTINE_DIR = Path(__file__).resolve().parents[3] / "data" / "raw" / "quarantine"
 GENS = (1, 2, 3, 4)
 
 
@@ -61,26 +68,48 @@ def _line(match: str, settings: PolicySettings, result: GameResult) -> dict:
 def run(match: str, gens: list[int], first: int, pairs: int, out: Path,
         settings: PolicySettings) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    done = set()
+    seen: dict[tuple[int, int], int] = {}  # (gen, index) -> lines already written for the pair
     if out.exists():
         for text in out.read_text(encoding="utf-8").splitlines():
             game = json.loads(text)
-            done.add((game["gen"], game["index"], game["swap"]))
+            key = (game["gen"], game["index"])
+            seen[key] = 2 if game.get("quarantined") else seen.get(key, 0) + 1
     players = _players(match, settings)
     bridge = Bridge()
     print(f"{match} with {settings}; simulator {bridge.simulator}; results in {out}", flush=True)
     with out.open("a", encoding="utf-8", newline="\n") as file:
         for gen in gens:
             for index in range(first, first + pairs):
-                for swap in (False, True):
-                    if (gen, index, swap) in done:
-                        continue
-                    result = bridge.play(gen, index, swap, players)
-                    file.write(json.dumps(_line(match, settings, result)) + "\n")
+                if seen.get((gen, index), 0) >= 2:
+                    continue
+                pair = {"match": match, "settings": asdict(settings), "gen": gen, "index": index}
+                swap = False
+                try:  # both games or neither: half a pair would bias the result
+                    lines = []
+                    for swap in (False, True):
+                        lines.append(_line(match, settings, bridge.play(gen, index, swap, players)))
+                except Exception:  # noqa: BLE001 - 13-A3: record it, drop the pair, carry on
+                    _quarantine(pair | {"swap": swap}, bridge.log)
+                    lines = [pair | {"quarantined": True}]
+                    bridge.abandon()
+                    bridge = Bridge()
+                file.write("".join(json.dumps(line) + "\n" for line in lines))
                 file.flush()
                 if (index - first + 1) % 50 == 0:
                     print(f"  gen{gen}: {index - first + 1}/{pairs} pairs", flush=True)
     bridge.close()
+
+
+def _quarantine(game: dict, logs: dict[str, list[str]]) -> None:
+    """Keep everything needed to replay a game that raised: it becomes a regression test."""
+    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"{game['match']}_gen{game['gen']}_{game['index']}_{int(game['swap'])}.json"
+    record = game | {
+        "traceback": traceback.format_exc(),
+        "logs": {side: "\n".join(chunks) for side, chunks in logs.items()},
+    }
+    (QUARANTINE_DIR / name).write_text(json.dumps(record, indent=1), encoding="utf-8",
+                                       newline="\n")
 
 
 def main(argv: list[str] | None = None) -> int:

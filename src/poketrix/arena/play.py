@@ -139,9 +139,17 @@ class Bridge:
         )
         self.simulator = self._read()["simulator"]
         self._game = 0
+        # What each externally played side received in the game being played: the evidence
+        # kept when a game has to be quarantined.
+        self.log: dict[str, list[str]] = {}
 
     def close(self) -> None:
         self._node.stdin.close()
+        self._node.wait(timeout=10)
+
+    def abandon(self) -> None:
+        """Stop a process whose game went wrong; the caller starts a fresh one."""
+        self._node.kill()
         self._node.wait(timeout=10)
 
     def _send(self, **message) -> None:
@@ -161,6 +169,7 @@ class Bridge:
         self._send(cmd="start", gen=gen, index=index, swap=swap, **kinds)
         readers = {side: BattleReader() for side, player in players.items() if player}
         tallies = {side: SideTally() for side in readers}
+        self.log = {side: [] for side in readers}
         self._game += 1
         while True:
             message = self._read()
@@ -169,6 +178,7 @@ class Bridge:
             if message.get("end"):
                 return GameResult(gen, index, swap, message["winner"], message["turns"], tallies)
             side = message["side"]
+            self.log[side].append(message["chunk"])
             for line in message["chunk"].split("\n"):
                 if line.startswith("|error|"):
                     if _UNAVAILABLE in line:
