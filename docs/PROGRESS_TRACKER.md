@@ -23,7 +23,7 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
 | 12b | Score fixes F1/F2, `a_floor`, guardrail audit | No | **Done, accepted** (`f93bb0b`; the user's "KO keeps the bonus" correction accepted) |
-| 13 | Tuning, then the evaluation, **with amendments 13-A1…A5 applied before any evaluation game** | **Yes**, with the results, before `cp-06` | **In progress**: tuning step 1 done (γ 0.5, floor 0 leads); step 2 (`utility_scale`) running; then 13-A2, then the evaluation |
+| 13 | Tuning, then the evaluation, **with amendments 13-A1…A5 applied before any evaluation game** | **Yes**, with the results, before `cp-06` | **Stopped before the evaluation**: tuning done, setting frozen, amendments applied; pass mark E3.2 needs a ruling (P1–P3, see the Order 13 checkpoint) |
 | 14 | Hygiene after `cp-06`: move out of OneDrive, timing on AC, archive the logbook, golden-decision CI test, dex field | No (pre-approved envelope) | Queued |
 | 15 | Phase 7 design proposal + v1 policy backlog | **Yes**, after the proposal | Queued |
 
@@ -2758,6 +2758,70 @@ The tag counts decide which Gen 1 mechanic is worth modelling first.
   the pair view shows the real precision. The verdict stays on E3 as amended.
 
 Then carry on with Order 13 steps 3–5 as written, and **stop with the results** before `cp-06`.
+
+#### Order 13, checkpoint of 2026-10-13 (Claude Code): tuning finished, setting frozen, **stopped before the evaluation on a pass-mark question**
+
+No evaluation game has been played. Indices 2,000,000–2,000,499 are untouched.
+
+**Amendments applied** (`ad2fb53`, 889 tests): 13-A1 (Newcombe interval of the difference, margin −2 points, per generation),
+13-A3 (a pair that raises is quarantined to `data/raw/quarantine/`, dropped whole, counted; over 0.5% of a generation's pairs fails
+the health mark), 13-A5 (mean pair score with a bootstrap interval over pairs, 10,000 resamples, seed 20261402). Only whole pairs
+are scored. 13-A4 is a rule, not code.
+
+**13-A2 done, for all eight step-1 settings, not five.** Their Gen 1 slices (1,600 games) were replayed on the fixed code; the
+earlier Gen 1 games are kept apart in `tune/before_gen1_fix/`. **Every one of the 1,600 games had the same winner as before**, so
+the table's Gen 1 column and the order did not change: the fix alters evidence in rare positions, and none of them changed a
+decision on these seeds. No pair was quarantined.
+
+**Final tuning table** (tuning indices, 100 pairs per generation, against max-damage, same code throughout):
+
+| γ | `a_floor` | `utility_scale` | Gen 1 | Gen 2 | Gen 3 | Gen 4 | Pooled | 95% interval |
+|---|-----------|-----------------|-------|-------|-------|-------|--------|--------------|
+| **0.5** | **0** | **1.5** | 65.0% | 81.5% | 82.0% | 85.0% | **78.4%** | 75.4% to 81.1% |
+| 0.5 | 0 | 1.0 | 66.5% | 80.5% | 79.5% | 84.5% | 77.8% | 74.7% to 80.5% |
+| 0.7 | 0 | 1.0 | 66.5% | 79.0% | 80.0% | 81.5% | 76.8% | 73.7% to 79.5% |
+| 0.3 | 0.5 | 1.0 | 65.5% | 79.5% | 76.0% | 83.5% | 76.1% | 73.1% to 78.9% |
+| 0.5 | 0.5 | 1.0 | 65.0% | 79.0% | 78.0% | 82.5% | 76.1% | 73.1% to 78.9% |
+| 0.3 | 0 | 1.0 | 65.5% | 78.5% | 78.0% | 81.5% | 75.9% | 72.8% to 78.7% |
+| 0.7 | 0.5 | 1.0 | 66.5% | 77.0% | 76.5% | 79.5% | 74.9% | 71.8% to 77.8% |
+| 0.5 | 0 | 0.5 | 61.0% | 75.0% | 77.0% | 79.5% | 73.1% | 69.9% to 76.1% |
+| 1.0 | 0 | 1.0 | 63.0% | 77.0% | 77.0% | 74.0% | 72.8% | 69.6% to 75.7% |
+| 1.0 | 0.5 | 1.0 | 61.0% | 73.0% | 76.5% | 75.0% | 71.4% | 68.1% to 74.4% |
+
+No illegal choice and no thrown-away knock-out in any of the 8,000 games.
+
+**Frozen setting, by the pre-written rule (highest pooled win rate): γ 0.5, `a_floor` 0, `utility_scale` 1.5.** It leads the
+defaults by 5 games in 800 (78.4% against 77.8%), well inside the noise, so some of that lead is luck; the rule was written before
+the results and is applied as written. Halving the status-move values (0.5) is clearly worse, so status moves earn their place.
+
+**Why I stopped: the amended mark E3.2 is close to a coin flip in Gen 1, whatever the policy does.** To see where the rates sit I
+played the two against-random matches on the *tuning* indices with the frozen setting (a dry run: nothing was tuned on it):
+
+| Gen | Policy against random | Max-damage against random | Difference | Interval at 200 games each |
+|-----|-----------------------|---------------------------|------------|-----------------------------|
+| 1 | 88.5% | 87.5% | +1.0 | −5.5 to +7.5 |
+| 2 | 94.0% | 91.5% | +2.5 | −2.7 to +7.8 |
+| 3 | 94.5% | 86.0% | +8.5 | +2.7 to +14.5 |
+| 4 | 96.5% | 88.0% | +8.5 | +3.3 to +14.0 |
+
+At the evaluation's size (1,000 games per player per generation) and rates near 88%, the Newcombe interval reaches about 2.9
+points each way. A lower end above −2 therefore needs an observed lead of about **+0.9 points or more**. If the true Gen 1 lead is
+about +1, as the dry run suggests, Gen 1 passes roughly half the time by chance alone, and two policies that are exactly level
+would fail it most of the time. That is the same flaw 13-A1 set out to remove, in a milder form: the mark tests the sample size,
+not the policy. And the evaluation indices can be used only once (13-A4).
+
+Everything else in the dry run would pass: against max-damage 78.4% pooled, 0 illegal, 0 errors, 0 timeouts in 53,020
+decisions, p95 26 ms, 0 quarantined pairs.
+
+**Decision needed (a pass mark, so outside the autonomy envelope). Options, with my recommendation first:**
+
+| # | Option | Effect |
+|---|--------|--------|
+| P1 (recommended) | Judge E3.2 **pooled** over the four generations at the −2-point margin (4,000 games each: the interval is about 1.4 points each way, so level policies pass), and per generation only require the lower end above **−5 points** | The mark can tell "level" from "clearly behind"; a generation that is really 5 points worse still fails |
+| P2 | Keep the per-generation −2 margin and play the two against-random matches with **2,000 pairs** per generation (indices 2,000,000–2,001,999 for those two matches only) | Interval about 2 points each way; level policies still fail about half the time, so this alone does not fix it |
+| P3 | Run it as amended | Gen 1, and possibly Gen 2, pass or fail largely by chance; a fail burns the evaluation range |
+
+After the ruling: one command per match runs the evaluation (about 12,000 games, under two hours), then the report and verdict.
 
 ### Order 14: hygiene after `cp-06` is approved (pre-approved envelope, no stop unless a check fails)
 

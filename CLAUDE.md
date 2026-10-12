@@ -165,6 +165,13 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
   keep DIR outside OneDrive), then pass DIR to the validation.
 
 Turn engine (`from poketrix.advisor import TurnAdvisor`), on `task/06-orchestrator`, not merged:
+- Order 13 state (2026-10-13): tuning is finished and the setting is frozen (γ 0.5, `a_floor` 0,
+  `utility_scale` 1.5; pass it to `python -m poketrix.arena run`, the code defaults are still
+  1.0). **No evaluation game has been played**: the run waits for a ruling on pass mark E3.2
+  (options P1–P3 in the tracker). Evaluation indices 2,000,000–2,000,499 may be used once only.
+- `poketrix.arena` (a dev tool, never imported by the runtime) plays paired games through
+  `scripts/randbats/play_bridge.mjs`; results and tuning files live in
+  `%LOCALAPPDATA%\poketrix-cache\arena`, quarantined games in `data/raw/quarantine/`.
 - `TurnAdvisor().advise(snapshot) -> TurnReport` for a player-mode snapshot (one with a request).
   A plain state machine in `pipeline.py`: uncloak → threats → offence → order → opponent →
   policy → write. Each stage returns a `SubsystemResult` inside its own budget
