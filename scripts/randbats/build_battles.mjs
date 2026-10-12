@@ -15,15 +15,11 @@
 // receives: the same battle with exact HP for its own side and a `|request|` before every
 // decision. It is about ten times larger, so only the first few battles keep it by default.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import showdown from 'pokemon-showdown';
-import randomPlayer from 'pokemon-showdown/dist/sim/tools/random-player-ai.js';
-
-const { BattleStream, getPlayerStreams, Teams } = showdown;
-const { RandomPlayerAI } = randomPlayer;
+import { BattleStream, RandomPlayerAI, SOURCE, Teams, getPlayerStreams } from './simulator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -31,9 +27,6 @@ const ALL_GENS = [1, 2, 3, 4];
 const FIXTURE_BATTLES = 10;
 const FIXTURE_PLAYER_LOGS = 2;
 const BASE_SEED = 20261201;
-const { version: SIMULATOR_VERSION } = JSON.parse(
-  readFileSync(join(HERE, 'node_modules', 'pokemon-showdown', 'package.json'), 'utf8'),
-);
 
 const toID = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -105,7 +98,7 @@ mkdirSync(outDir, { recursive: true });
 for (const gen of ALL_GENS) {
   const battles = [];
   for (let index = 0; index < count; index++) battles.push(await play(gen, index, index < playerLogs));
-  const source = { simulator: 'pokemon-showdown', version: SIMULATOR_VERSION, format: `gen${gen}randombattle`, base_seed: BASE_SEED };
+  const source = { simulator: 'pokemon-showdown', ...SOURCE, format: `gen${gen}randombattle`, base_seed: BASE_SEED };
   const path = join(outDir, `battles_gen${gen}.json`);
   writeFileSync(path, `{"source":${JSON.stringify(source)},"battles":[\n${battles.map((b) => JSON.stringify(b)).join(',\n')}\n]}\n`);
   console.log(`gen${gen}: ${battles.length} battles -> ${path}`);

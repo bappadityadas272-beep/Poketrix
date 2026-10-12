@@ -42,7 +42,7 @@ def uncloak(species, uncloaker=UNCLOAKER4, **evidence):
 
 
 def test_set_counts_and_source_are_as_built():
-    assert [len(load_prior(gen).all_sets()) for gen in GENS] == [431, 559, 1184, 1740]
+    assert [len(load_prior(gen).all_sets()) for gen in GENS] == [431, 559, 1174, 1732]
 
 
 @pytest.mark.parametrize("gen", GENS)

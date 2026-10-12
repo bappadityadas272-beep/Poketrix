@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-05` merged (Phases 0–5 done); next: prior rebuild (Order 10), then the Phase 6 proposal (2026-10-13)
+## Current state — `cp-05b` merged (Phases 0–5 done, prior rebuilt); next: the Phase 6 proposal, Order 11 (2026-10-13)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -57,6 +57,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-03c | Gen 3, Gen 2 and Gen 1 engines, verified against the oracle; 679 tests total |
 | cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
 | cp-05 | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 846 tests total |
+| cp-05b | Prior, held-out tables and battle fixtures rebuilt from Showdown's current source; 847 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -115,8 +116,15 @@ Uncloak (`from poketrix.uncloak import Uncloaker, load_prior`):
   `SubsystemResult[SetPosterior]`. Status `ok` is plain Bayes over the known sets; `fallback`
   means the evidence contradicted every known set (tiers 2 and 3); it never raises.
 - The prior is `data/randbats/gen{N}/sets.json`, sampled from Showdown's official generator
-  (`pokemon-showdown` 0.11.11, 100,000 teams). Rebuild: `cd scripts/randbats && npm install &&
-  npm run build-randbats`. That folder is separate because the install is 181 MB.
+  (100,000 teams). Its `source` records where from: currently a git checkout at commit
+  `942cda7` (2026-10-09), because npm releases are rare and the live sets move on between them.
+- Rebuild: `scripts/randbats/simulator.mjs` picks the source. Default is the npm package
+  (`cd scripts/randbats && npm install && npm run build-randbats`; a 181 MB install, hence the
+  separate folder). For the current sets, clone `smogon/pokemon-showdown` with `--depth 1` into
+  `%LOCALAPPDATA%\poketrix-cache\pokemon-showdown` (never inside the repo or OneDrive), run
+  `npm install && node build` there, and set `POKETRIX_SHOWDOWN_DIR` to it. Rebuild the battle
+  fixtures with the same source. Accept a rebuild only if `tests/test_uncloak.py` passes and
+  `python -m poketrix.showdown.corpus` shows the floor at 0 and ladder staleness not higher.
 - `SetPrior.pokemon_set(set_id)` gives the full `PokemonSet` (level and spread included) for
   the damage calculator.
 - `threat_report(ours, theirs, posterior, prior, ...)` returns `SubsystemResult[ThreatReport]`:
@@ -157,9 +165,10 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
   keep DIR outside OneDrive), then pass DIR to the validation.
 
 Carried forward (from the Task 04 review):
-- R8 is decided: no probability is held back for unseen sets. Measured on 2,000 real replays:
-  0% on the Gen 1–2 ladder, about 0.3% in Gens 3–4, concentrated in eight species, so the
-  prior is rebuilt from Showdown's current source instead (Order 10, `cp-05b`).
+- R8 is decided: no probability is held back for unseen sets. The prior is rebuilt from
+  Showdown's current source instead (`cp-05b`): ladder staleness on 2,000 real replays went
+  from about 0.3% in Gens 3–4 to 0 in every generation. It will drift again as the live sets
+  change; the corpus measurement is how to notice.
 - For Phase 6: R14, a switch recommendation must carry the trapping risk (Shadow Tag, Arena
   Trap, Magnet Pull against our Steel-type) from the ability posterior, and offer a move as
   well when it is 0.5 or more; R11, no damage numbers for a transformed Pokémon; the live

@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (Order 9 done: `cp-05` merged and tagged; Orders 10–11 next)
+Last updated: 2026-10-13 (Orders 9 and 10 done: `cp-05` and `cp-05b` merged and tagged; Order 11 next)
 
 ## Status at a glance
 
@@ -11,12 +11,12 @@ Last updated: 2026-10-13 (Order 9 done: `cp-05` merged and tagged; Orders 10–1
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode); the prior rebuild follows (Order 10) | `cp-05`, `cp-05b` pending |
+| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode; prior rebuilt from the current source) | `cp-05`, `cp-05b` |
 | 6 | Orchestrator + decision policy + synthesis guardrail | Next: design proposal (Order 11) | |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 846 passing on `main` (`cp-05`) in the default run, plus 8 of 8 with `pytest -m timing`. `ruff` is clean.
+Tests: 847 passing on `main` (`cp-05b`) in the default run, plus 8 of 8 with `pytest -m timing` (taken at `cp-05`). `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
@@ -25,7 +25,7 @@ Tests: 846 passing on `main` (`cp-05`) in the default run, plus 8 of 8 with `pyt
 | 7 | Test hygiene (R9/R11/R12/R13) | No | **Done** (`e8c35e9`) |
 | 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
 | 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **Done** (`cp-05`; see the result under Order 9) |
-| 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **To do** |
+| 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **Done** (`cp-05b`; all checks passed, ladder staleness now 0) |
 | 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **To do** |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 5", near the end of this file. The optional
@@ -2141,6 +2141,56 @@ Branch: `task/05b-prior-rebuild`.
    - Prior tables stay ≤ 5 MB in total, and the full suite plus `ruff` are green.
 4. If all checks pass: merge `--no-ff`, tag `cp-05b`, log it, push, and mark the order Done. If any fails: **stop** and
    report the table instead.
+
+**Result (2026-10-13): all acceptance checks passed; merged and tagged `cp-05b`.** 847 passed in
+the default run; `ruff` clean.
+
+Source: npm has no release after 0.11.11 (published 2026-07-28), so the prior is sampled from a
+shallow git checkout at commit `942cda71d14bf0618bd57991708a2e2734b6daba` (2026-10-09), kept in
+`%LOCALAPPDATA%\poketrix-cache\pokemon-showdown` (247 MB after `npm install` and `node build`).
+`scripts/randbats/simulator.mjs` (new) chooses the source: the npm package by default, or the
+checkout named by `POKETRIX_SHOWDOWN_DIR`. Each table's `source` records the commit and its date.
+With the npm source the scripts still reproduce the old tables byte for byte. Same sampling as
+before: 100,000 teams per generation, the same seeds.
+
+| Gen | Sets before | Sets after | Sets removed | Sets added | Species whose sets changed |
+|-----|-------------|------------|--------------|------------|----------------------------|
+| 1 | 431 | 431 | 2 | 2 | 1 (Beedrill) |
+| 2 | 559 | 559 | 0 | 0 | 0 |
+| 3 | 1,184 | 1,174 | 198 | 188 | 39 |
+| 4 | 1,740 | 1,732 | 352 | 344 | 53 |
+
+| Acceptance check | Result |
+|------------------|--------|
+| Task 04 evaluation targets (asserted by `tests/test_uncloak.py`) | Met. True set kept on tier 1: 100% in Gens 1–3, 99.9975% in Gen 4. Largest move calibration error with the full prior: 0.0029 |
+| Synthetic floor (R10), corpus regenerated from the new source | 0 of 21,233 contradicted, 0 bugs. Spectator evidence: 0 false claims. Player mode: 12,000 of 12,000 sets exact, 103,699 requests, 0 violations |
+| Real-replay staleness has dropped | Yes, to 0 (table below) |
+| Prior tables at most 5 MB | 0.66 MB |
+| Full suite and `ruff` | Green |
+
+Staleness on the same 2,000 real replays, ladder games:
+
+| Gen | Before | After |
+|-----|--------|-------|
+| 1 | 0 of 3,949 | 0 of 3,949 |
+| 2 | 0 of 1,373 | 0 of 1,373 |
+| 3 | 15 of 4,161 (0.36%) | **0 of 4,161** (95% interval 0% to 0.09%) |
+| 4 | 12 of 3,694 (0.32%) | **0 of 3,694** (95% interval 0% to 0.10%) |
+
+| Species (ladder contradictions) | Before | After |
+|---------------------------------|--------|-------|
+| Gen 3: Seaking / Primeape / Medicham / Aggron | 8 / 3 / 3 / 1 | 0 / 0 / 0 / 0 |
+| Gen 4: Charizard / Ho-Oh / Mightyena / Jirachi | 5 / 4 / 2 / 1 | 0 / 0 / 0 / 0 |
+
+Tournament and challenge games: Gens 3–4 went from 3 and 8 to 0 and 0; Gens 1–2 are unchanged at 1
+and 18, which are the custom-rule games.
+
+One tracker bug found by the new corpus and fixed: when Trick swaps two copies of the same item
+(Leftovers for Leftovers), the second line cleared the item the first line had just handed over,
+so the state showed no item. Player mode caught it as 3 request disagreements; the evidence was
+never wrong. It has its own test.
+
+The battle fixtures and the held-out tables were regenerated from the same source.
 
 ### Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.**
 Branch: `task/06-orchestrator`. Write the proposal as a new section in this tracker. Phase 6 turns one player-mode

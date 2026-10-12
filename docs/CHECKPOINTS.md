@@ -31,3 +31,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 | cp-03c | Math layer 03c: Gen 3, 2 and 1 damage engines (completes Phase 3) | 2026-10-10 | 679 passed |
 | cp-04 | Bayesian set uncloaker + threat report (completes Phase 4) | 2026-10-11 | 731 passed |
 | cp-05 | Showdown battle-log parser: spectator and player mode, evidence rules, staleness measurement (completes Phase 5) | 2026-10-13 | 846 passed (+8 timing) |
+| cp-05b | Prior rebuilt from Showdown's current source (commit `942cda7`); ladder staleness 0 in every generation | 2026-10-13 | 847 passed |

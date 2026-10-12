@@ -4,6 +4,8 @@
 //   cd scripts/randbats && npm install && npm run build-randbats      (all generations)
 //   node build_randbats.mjs 4                                         (one generation)
 //
+// simulator.mjs says which pokemon-showdown is sampled: the npm package or a newer git checkout.
+//
 // Two tables per generation, from different seeds, in the same format:
 //   data/randbats/gen{N}/sets.json                 the prior (PRIOR.teams teams)
 //   tests/fixtures/randbats_holdout_gen{N}.json    held-out teams for the evaluation
@@ -16,9 +18,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import showdown from 'pokemon-showdown';
-
-const { Dex, Teams } = showdown;
+import { Dex, SOURCE, Teams } from './simulator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -26,9 +26,6 @@ const ALL_GENS = [1, 2, 3, 4];
 const PRIOR = { seed: 20261101, teams: 100000 };
 const HOLDOUT = { seed: 20261102, teams: 20000 };
 const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
-const { version: GENERATOR_VERSION } = JSON.parse(
-  readFileSync(join(HERE, 'node_modules', 'pokemon-showdown', 'package.json'), 'utf8'),
-);
 
 const toID = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -94,7 +91,7 @@ function sample(gen, { seed, teams }, speciesIds) {
 function write(path, gen, source, rows) {
   const header = {
     generator: 'pokemon-showdown',
-    version: GENERATOR_VERSION,
+    ...SOURCE,
     format: `gen${gen}randombattle`,
     seed: source.seed,
     teams: source.teams,

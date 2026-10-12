@@ -1,4 +1,4 @@
-{"source":{"generator":"pokemon-showdown","version":"0.11.11","format":"gen1randombattle","seed":20261101,"teams":100000,"default_spread":{"iv":15,"ev":65535}},"sets":[
+{"source":{"generator":"pokemon-showdown","version":"0.11.11","commit":"942cda71d14bf0618bd57991708a2e2734b6daba","commit_date":"2026-10-09","format":"gen1randombattle","seed":20261101,"teams":100000,"default_spread":{"iv":15,"ev":65535}},"sets":[
 {"species":"abra","level":84,"moves":["counter","psychic","seismictoss","thunderwave"],"item":null,"ability":null,"ivs":{"atk":1},"evs":{"atk":0},"count":2137},
 {"species":"abra","level":84,"moves":["psychic","seismictoss","substitute","thunderwave"],"item":null,"ability":null,"ivs":{"atk":1},"evs":{"atk":0},"count":2123},
 {"species":"abra","level":84,"moves":["psychic","reflect","seismictoss","thunderwave"],"item":null,"ability":null,"ivs":{"atk":1},"evs":{"atk":0},"count":2108},
@@ -17,8 +17,8 @@
 {"species":"articuno","level":70,"moves":["agility","blizzard","hyperbeam","mimic"],"item":null,"ability":null,"ivs":{},"evs":{},"count":666},
 {"species":"articuno","level":70,"moves":["agility","blizzard","hyperbeam","reflect"],"item":null,"ability":null,"ivs":{},"evs":{},"count":621},
 {"species":"articuno","level":70,"moves":["agility","blizzard","hyperbeam","icebeam"],"item":null,"ability":null,"ivs":{},"evs":{},"count":618},
-{"species":"beedrill","level":81,"moves":["agility","hyperbeam","swordsdance","twineedle"],"item":null,"ability":null,"ivs":{},"evs":{},"count":3066},
-{"species":"beedrill","level":81,"moves":["hyperbeam","megadrain","swordsdance","twineedle"],"item":null,"ability":null,"ivs":{},"evs":{},"count":1545},
+{"species":"beedrill","level":84,"moves":["agility","hyperbeam","swordsdance","twineedle"],"item":null,"ability":null,"ivs":{},"evs":{},"count":3066},
+{"species":"beedrill","level":84,"moves":["hyperbeam","megadrain","swordsdance","twineedle"],"item":null,"ability":null,"ivs":{},"evs":{},"count":1545},
 {"species":"bellsprout","level":88,"moves":["doubleedge","razorleaf","sleeppowder","stunspore"],"item":null,"ability":null,"ivs":{},"evs":{},"count":2255},
 {"species":"bellsprout","level":88,"moves":["doubleedge","razorleaf","sleeppowder","swordsdance"],"item":null,"ability":null,"ivs":{},"evs":{},"count":1126},
 {"species":"blastoise","level":75,"moves":["blizzard","bodyslam","earthquake","surf"],"item":null,"ability":null,"ivs":{},"evs":{},"count":1456},

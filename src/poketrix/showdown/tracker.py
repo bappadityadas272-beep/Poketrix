@@ -158,6 +158,9 @@ class BattleTracker:
         # Pokémon whose items the item lines being read right now have swapped (Trick shows as
         # two lines): each still counts as "before the swap" when the other line names its item.
         self._swapping: set[int] = set()
+        # Pokémon that those same lines have already handed an item: what they hold now is the
+        # new one, and the other line must not take it away (both may hold the same item).
+        self._received: set[int] = set()
         self._after_upkeep = False
         self._dex: Dex | None = None
         self._item_ids: frozenset[str] = frozenset()
@@ -192,6 +195,7 @@ class BattleTracker:
     def apply(self, event: ev.Event) -> None:
         if not isinstance(event, ev.ItemEvent):
             self._swapping.clear()
+            self._received.clear()
         self._request = None  # the battle has moved on: the last request is answered
         self._handlers[type(event)](event)
 
@@ -664,9 +668,11 @@ class BattleTracker:
                 first_swap = not giver.book.item_swapped or id(giver) in self._swapping
                 giver.book.saw_item(event.item_id, before_swap=first_swap)
                 self._mark_swapped(giver)
-                if giver.held_item == event.item_id or source.id in ("thief", "covet"):
+                gave_it_away = giver.held_item == event.item_id or source.id in ("thief", "covet")
+                if gave_it_away and id(giver) not in self._received:
                     giver.held_item = None
             self._mark_swapped(mon)
+            self._received.add(id(mon))
             mon.held_item, mon.item_lost = event.item_id, False
             return
         self.rules["item: announced (-item)"] += 1
