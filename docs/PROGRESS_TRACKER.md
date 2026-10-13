@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting for the user to move the repository)
+Last updated: 2026-10-14 (cp-06 verified by reviewer: Phase 6 complete; next: repository move, 14-lite, Phase 7)
 
 ## Status at a glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting 
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
-| 6 | Turn engine: orchestrator + decision policy + template synthesis | 12b **accepted**; tuning running; evaluation next under amended pass marks (13-A) | `cp-06` pending |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | **Done, merged.** Evaluation passed on every mark: 77.4% (76.1–78.6) against max-damage over 12,000 games | `cp-06` |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
@@ -25,8 +25,8 @@ listed below is v2.
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 13 | One-shot evaluation (13-A6 rules) | — | **Win-rate marks PASSED** (5de7391). Health 3e missed in Gen 4 by one Ditto bug → ruling **13-A7** |
-| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **Done: E3 passes, `cp-06` merged and tagged** (see "Order 13-A7 result") |
+| 13 | One-shot evaluation (13-A6 rules) | — | **Done, passed** |
+| 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
 | 14-lite | Hygiene, cut to what v1 needs | No | A8 golden-decision test **done** with `cp-06`; the repo move is the user's, pending |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
@@ -2971,6 +2971,20 @@ Pass path carried out:
 - **Self-destruct advice:** about 1 per 12 games, and about half of those with a KO chance under 50%. Audit it in v2, and consider requiring a
   KO chance threshold or "last Pokémon" for self-faint moves.
 - **Gen 1** is the weakest generation (68.7% against max-damage, about level against random). The Gen 1 diagnosis stays v2 item 0.
+
+## Reviewer note: `cp-06` verified (2026-10-14)
+
+**13-A7 was carried out exactly as ruled.**
+- The root cause was a forme-change line while transformed (not abilities), and it is now fixed for Arceus, Giratina and Deoxys, with the 3 games as fixtures.
+- Ground truth is still at 0 false claims.
+- **Determinism: 994 of 994 untouched games are identical in winner, turn count and decision count.**
+- The 3 pairs now play, winning 5 of 6 games.
+
+E3 **passes on every mark, with no quarantine anywhere.** Making the evaluated setting the code default (`utility_scale` 1.5) is correct:
+what ships is what was measured. A8 (the golden-decision test, 8 games, 519 decisions) is in `cp-06`. The reviewer checked `main` = `origin/main` =
+`1446c1d`, tagged `cp-06`. **Phase 6 is complete.**
+
+The next stop is Phase 7's results (Order 15). Order 14-lite is now just: the user's move, then recreate `.venv` and confirm green.
 
 ## ▶ ACTIVE — Orders for Claude Code, batch 9 (written 2026-10-14 while the evaluation runs)
 
