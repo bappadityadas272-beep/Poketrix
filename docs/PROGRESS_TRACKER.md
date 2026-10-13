@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (evaluation running; batch 9 pre-written for both outcomes; plan to a v1 demo by 2026-10-16)
+Last updated: 2026-10-14 (ruling 13-A7: S1 with a determinism check; win-rate marks passed)
 
 ## Status at a glance
 
@@ -25,8 +25,8 @@ listed below is v2.
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 13 | One-shot evaluation (13-A6 rules) | See Order 13-R | **Stopped with the results.** Every win-rate mark passes (77.4% against max-damage); health mark 3e missed in Gen 4 (3 quarantined pairs, one Ditto bug). Needs a ruling: S1–S3 under "Order 13-R result" |
-| 13-R | Result branch: **pass** → merge `cp-06` and continue; **fail** → stop | Only on fail or anomaly | Pre-written |
+| 13 | One-shot evaluation (13-A6 rules) | — | **Win-rate marks PASSED** (5de7391). Health 3e missed in Gen 4 by one Ditto bug → ruling **13-A7** |
+| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **To do now** |
 | 14-lite | Hygiene, cut to what v1 needs | No | Queued |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
@@ -2897,6 +2897,47 @@ Propose the following:
   4. A second, independent baseline that doesn't use our estimator, so "beats max-damage" isn't only measured against ourselves.
 - **Human-play proxy:** agreement between our advice and the winning player's actual choices in real replays. It is cheap,
   it uses no new data, and it is the first signal about play against people.
+
+## Reviewer ruling 13-A7 (2026-10-14): the Phase 6 evaluation result and health mark 3e
+
+**Verdict on the evaluation as played (11,994 games, reserved indices, frozen setting):**
+
+| Mark | Requirement | Result | |
+|------|-------------|--------|--|
+| E3.1 | Against max-damage: pooled lower bound above 50%, no gen below 45% | 77.4% (76.0–78.6); lowest gen is Gen 1 at 68.7% | **Pass** |
+| E3.2 pooled | Policy minus max-damage, both against random: lower bound above −2 points | +6.0 (+4.7 to +7.3) | **Pass** |
+| E3.2 per gen | Lower bound above −5 points | Gen 1 +0.5, Gens 2–4 +6 to +10 | **Pass** |
+| E3.3 | 0 illegal, 0 errors, timeouts under 1%, p95 under 250 ms | 0 / 0 / 0.01% / 45 ms | **Pass** |
+| E3.3, quarantine | At most 0.5% of pairs per gen | Gen 4 policy v max-damage: 3 of 500 = **0.60%** | **Missed** |
+
+The policy result is real and robust. Even counting all 6 dropped games as losses gives 79.8% in Gen 4 and 77.3% pooled. The
+regression from tuning (78.4%) to evaluation (77.4%) is about 1 point, as expected.
+
+**Ruling: S1, with a determinism safeguard.** The two orders conflicted, and that's the reviewer's drafting error. 13-R's
+"health mark missed → stop, no re-runs" did not exempt **13-A3**, which was written earlier for exactly this case ("fix, and re-run
+that generation on its same indices"). The specific, pre-registered rule governs. 13-A4 (burned seeds) still governs *policy*
+failures, and this is not one. S2 would spend Phase 7's fresh range on a tracker bug. S3 would bend a pre-registered mark after
+seeing results. Neither is acceptable.
+
+### Order 13-A7 (no stop if every check passes)
+On `task/06-orchestrator`:
+1. **Commit or stash the uncommitted golden-test work first**, so the fix lands in a clean, separate commit.
+2. **Fix the Ditto bug in the tracker:** a transformed Ditto must keep its **own** set identity. A species with only one
+   ability must not cause Ditto's set to be read as the target's. Use the 3 quarantined games as regression tests. Also look for the same
+   pattern in Gens 1–3 (Ditto exists from Gen 1, and Mew can Transform), and test it. The ground-truth validation must stay at 0 false claims.
+   This is a tracker fix inside the autonomy envelope. The **policy is unchanged.**
+3. **Re-run only Gen 4, policy v max-damage, on indices 2,000,000–2,000,499,** with the frozen setting.
+4. **Determinism check, required:** the 497 pairs that were *not* quarantined must reproduce **exactly** the same outcomes, winner by winner,
+   as the first run. That proves the fix touched only the broken games, and that the re-run can't have changed the
+   result in any other way. If even one non-quarantined pair differs: **stop** and report.
+5. Re-judge 3e for that cell. If quarantine is at most 0.5% (it is expected to be 0), the full E3 verdict is **PASS**. Then follow
+   13-R's pass path: A4 README table → record the golden games → green `pytest` → merge `--no-ff` → tag `cp-06` → push → log.
+6. **Tell the user you are idle** so they can move the repository, then continue with 14-lite and Phase 7 as written.
+
+### Notes for v2 (no action now)
+- **Self-destruct advice:** about 1 per 12 games, and about half of those with a KO chance under 50%. Audit it in v2, and consider requiring a
+  KO chance threshold or "last Pokémon" for self-faint moves.
+- **Gen 1** is the weakest generation (68.7% against max-damage, about level against random). The Gen 1 diagnosis stays v2 item 0.
 
 ## ▶ ACTIVE — Orders for Claude Code, batch 9 (written 2026-10-14 while the evaluation runs)
 
