@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (ruling 13-A6 on E3.2: option P1 adopted; evaluation cleared to run)
+Last updated: 2026-10-14 (evaluation running; batch 9 pre-written for both outcomes; plan to a v1 demo by 2026-10-16)
 
 ## Status at a glance
 
@@ -20,14 +20,19 @@ Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing test
 
 ## ▶ Current orders (read this first)
 
+**Target: a demonstrable v1 by 2026-10-16** (proven engine + learned opponent model + read-only overlay). Anything not
+listed below is v2.
+
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 12b | Score fixes F1/F2, `a_floor`, guardrail audit | No | **Done, accepted** (`f93bb0b`; the user's "KO keeps the bonus" correction accepted) |
-| 13 | Tuning, then the evaluation | **Yes**, with the results, before `cp-06` | **Cleared to run the evaluation.** Tuning frozen (γ 0.5, `a_floor` 0, `utility_scale` 1.5); E3.2 ruled by **13-A6 (P1)** |
-| 14 | Hygiene after `cp-06`: move out of OneDrive, timing on AC, archive the logbook, golden-decision CI test, dex field | No (pre-approved envelope) | Queued |
-| 15 | Phase 7 design proposal + v1 policy backlog | **Yes**, after the proposal | Queued |
+| 13 | One-shot evaluation (13-A6 rules) | See Order 13-R | **Running** (started 2026-10-14 00:00) |
+| 13-R | Result branch: **pass** → merge `cp-06` and continue; **fail** → stop | Only on fail or anomaly | Pre-written |
+| 14-lite | Hygiene, cut to what v1 needs | No | Queued |
+| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
+| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
+| 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 8" and the new standing rule "Autonomy envelope".
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -2853,7 +2858,7 @@ E3.1 (head to head against max-damage: pooled lower bound above 50%, no gen belo
 **Go:** run the evaluation on indices 2,000,000–2,000,499 with the frozen setting, then report per Order 13 step 4 with the E3 verdict
 under 13-A6, and **stop** before `cp-06`.
 
-### Order 14: hygiene after `cp-06` is approved (pre-approved envelope, no stop unless a check fails)
+### ⤷ SUPERSEDED by batch 9 (14-lite) — Order 14: hygiene after `cp-06` is approved
 
 1. **Repository location (the user does this, with Claude Code checking):** close VS Code, move the repository from OneDrive to
    `C:\dev\Poketrix`, and reopen it. The git remote is unaffected. Claude Code then confirms that `git status` is clean and `pytest` is green.
@@ -2875,7 +2880,7 @@ under 13-A6, and **stop** before `cp-06`.
    (a `-message`, a `-hint` or a tag). If it does, use exact detection and stop ignoring the 187 first moves. Re-run the ground-truth
    check (it must stay at 0 false claims). If it doesn't, keep the conservative rule and record why.
 
-### Order 15: Phase 7 design proposal, plus the v1 policy backlog. **STOP after the proposal.**
+### ⤷ SUPERSEDED by batch 9 — Order 15: Phase 7 design proposal, plus the v1 policy backlog
 
 Phase 7 replaces `heuristic-0` with a learned opponent-action model (XGBoost) trained on real replay decisions.
 Propose the following:
@@ -2892,6 +2897,107 @@ Propose the following:
   4. A second, independent baseline that doesn't use our estimator, so "beats max-damage" isn't only measured against ourselves.
 - **Human-play proxy:** agreement between our advice and the winning player's actual choices in real replays. It is cheap,
   it uses no new data, and it is the first signal about play against people.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 9 (written 2026-10-14 while the evaluation runs)
+
+Context: the user wants a demonstrable v1 by **2026-10-16**. To avoid waiting on reviews, the designs below are **decided in
+advance**. Claude Code builds directly and stops only where marked, or when something contradicts these specs (as with F1). The
+autonomy envelope still applies.
+
+### Order 13-R: what to do when the evaluation finishes
+Write the full report into this file first (per Order 13 step 4, with the E3 verdict under 13-A6). Then:
+
+- **PASS** (E3.1, E3.2 and E3.3 all met, 0 illegal choices, quarantine ≤ 0.5% per gen, nothing anomalous):
+  1. Write A4 (the README results table: the three match-ups per gen and pooled, with intervals, plus the headline sentence).
+  2. Merge `--no-ff` to `main`, tag `cp-06`, push, and log it. **Pre-approved. No stop.**
+  3. Update the explainer facts in the README only. The reviewer updates the claude.ai docs.
+  4. Continue with Order 14-lite.
+- **FAIL, or anything anomalous** (an unexplained result, a health mark missed, a quarantine spike): **stop** and report. No
+  changes, no re-runs. 13-A4 applies: the evaluation range is used up.
+
+### Order 14-lite: hygiene that v1 needs (no stop)
+1. **The user** moves the repository out of OneDrive to `C:\dev\Poketrix` when convenient. Ask them once, then confirm a clean
+   `git status` and a green `pytest` afterwards. If they don't move it, carry on regardless.
+2. **A8, the golden-decision replay test in CI** (2 games per gen). This protects the policy during Phases 7–8, so do it now.
+3. **Deferred to v2:** logbook archiving, the dex `selfdestruct` field, exact Gen 1 desync detection, and timing on AC. Note them in the v2 list.
+
+### Order 15: Phase 7, the learned opponent-action model. **Build directly. STOP with the results.**
+Branch: `task/07-opponent-model`.
+
+**Data**
+- Source: the 2,000 real replays already downloaded. **Exclude** custom-rule or tournament games (those flagged in Order 8) and any game the parser
+  refuses. The use of more downloads is pre-authorised (polite, same script, up to +500 per gen), but only if a gen has fewer
+  than 3,000 labelled decisions after the exclusions.
+- Rows: one per **voluntary decision** per side (in spectator view both players count), from snapshots taken **before** the decision.
+  - Exclude forced switches.
+  - Exclude turns with no choice: recharge, Bide or Thrash/Outrage/Petal Dance lock, Rollout or Uproar lock, Gen 1 partial-trap lock, Sky Attack/Solar Beam/Skull Bash second turns.
+  - **Label:** `attack` (a damaging move), `utility` (a status or non-damaging move), or `switch`.
+- **Features, visible at decision time only,** computed from that side's view of its opponent, using our own engines:
+  - generation and turn;
+  - both actives' HP fractions, statuses, sums of their boosts, and alive and healthy-bench counts;
+  - our engine's quantities from the deciding side's point of view: its best KO chance and expected damage on the target, the target's
+    `p_ko_best_move` and expected damage against it, P(it moves first);
+  - hazards on its side, and whether its revealed moves include a status move;
+  - ladder rating where the replay states it (else missing).
+
+  **No future information:** a feature may only come from lines before the decision. Add a test that recomputes the features from a truncated log and gets identical values.
+- **Split by battle,** 70 / 15 / 15, stratified by gen, with seed 20261501. Nothing from a test battle is used for training or for early stopping.
+
+**Model**
+- XGBoost, multiclass (3 classes), as an **optional dependency** (`pip install -e ".[ml]"`). If it isn't installed, the stage falls back
+  to `heuristic-0` with status `fallback`.
+- Small search on the validation split only: depth ∈ {3, 5}, learning rate ∈ {0.05, 0.1}, early stopping on validation log-loss.
+  Then **isotonic or temperature calibration** fitted on validation.
+- Saved as XGBoost's JSON in `data/models/opponent-xgb-1.json`, with a manifest (data ids, split seed, features, metrics).
+  `ActionPrediction.model_version = "xgb-1"`. Inference must stay under 2 ms per decision.
+
+**Metrics, on the test split, per gen and pooled, against two baselines** (the per-gen base rates, and `heuristic-0`):
+- log-loss, Brier score, accuracy, and a 10-bin reliability table with expected calibration error (ECE);
+- a battle-level bootstrap 95% interval for the log-loss improvement (resampling battles, not rows).
+
+**Pass marks for Phase 7** (power check done by the reviewer: 15% of about 2,000 battles is about 300 test battles, roughly 10,000 decisions; with the
+battle-level bootstrap, a pooled log-loss gain of about 0.01–0.02 is detectable, while per-gen estimates are noisier, so per gen is point-estimate only):
+1. The pooled log-loss improvement over **both** baselines has a bootstrap lower bound above 0.
+2. Pooled ECE ≤ 0.03 after calibration.
+3. Per gen: log-loss is not worse than the base-rate baseline (the point estimate).
+
+**Downstream check, as a sanity check only, not the pass mark.** Our simulator opponents are bots, and a model of *humans*
+can make bot games worse even when it predicts people better. So: the policy with `xgb-1` against max-damage, 200 pairs per gen,
+on a **fresh** range 3,000,000–3,000,199, compared with `heuristic-0` on the same indices.
+- Report the paired difference.
+- Flag it (don't fail it) if the pooled lower bound is below −3 points.
+- **Write the range here before running.**
+
+**Then stop with:** the metric tables, the calibration table, the downstream result, and the 10 most important features. The reviewer
+decides whether the `xgb-1` model becomes the default.
+
+### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
+Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
+
+- **Local server:** `python -m poketrix serve`, bound to **127.0.0.1 only**. One `BattleTracker` + `TurnAdvisor` per battle room.
+  Endpoints: `POST /line` (room id + a batch of protocol lines) and `GET /advice?room=` (the latest `TurnReport`, rendered for the panel).
+  Use the standard library or one small dependency. No authentication beyond localhost, and no data persisted except an optional debug log.
+- **Browser extension (Chrome, Manifest V3):** host permissions **only** for `play.pokemonshowdown.com`,
+  `replay.pokemonshowdown.com` and `http://127.0.0.1:<port>`.
+  - A page script observes the Showdown client's incoming battle messages, including the user's own `|request|`, and forwards
+    them to the local server in arrival order.
+  - A side panel shows the headline, the top 3 scored options with their numbers, the opponent's likely set (top 2), and the threat line.
+- **Fair-play guard, enforced in code:** if the battle is rated (the protocol's `|rated|` line), the panel shows
+  "Poketrix is off in rated battles" and the server returns no advice. Advice is available in unrated games, challenges and replays.
+  State this in the README.
+- **Demo mode:** on `replay.pokemonshowdown.com`, advise from the perspective of p1 (spectator mode), so the demo needs no live game.
+- **Tests:**
+  - Server: unit tests for each endpoint, plus a replayed fixture battle posted line by line, giving the same advice as `analyze`.
+  - Extension: a manual checklist, with screenshots in the tracker.
+  - Latency from a line's arrival to the advice shown: p95 under 300 ms on the user's machine.
+- **Then stop with:** the screenshots, a short screen recording (optional), the latency numbers, and the known limits.
+
+### Order 17: v1 wrap-up (no stop)
+1. **README:** what Poketrix is, a quickstart (install, `analyze`, `serve` + loading the extension), the results tables (calculator oracle,
+   uncloaker calibration, parser ground truth, Phase 6 evaluation, Phase 7 metrics), the fair-play note, and the known limits.
+2. Tag `v1.0` on `main` once Orders 15 and 16 are approved and merged (`cp-07`, `cp-08`).
+3. **The v2 list** in this file: the Gen 1 diagnosis, priority moves, recoil and recharge, set-up moves, an independent baseline, a human trial,
+   `utility_scale` > 1.5, logbook archiving, the dex field, exact desync detection, timing on AC, and Gen 5+.
 
 ## Standing rule added: the autonomy envelope (2026-10-13)
 
