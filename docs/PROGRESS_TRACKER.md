@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (cp-06 verified by reviewer: Phase 6 complete; next: repository move, 14-lite, Phase 7)
+Last updated: 2026-10-14 (repository moved to `C:\dev\Poketrix`, 14-lite done; Phase 7, Order 15, in progress)
 
 ## Status at a glance
 
@@ -16,7 +16,7 @@ Last updated: 2026-10-14 (cp-06 verified by reviewer: Phase 6 complete; next: re
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
+Tests: 910 passing on `main` (`cp-06`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
@@ -27,8 +27,8 @@ listed below is v2.
 |-------|------|-------|--------|
 | 13 | One-shot evaluation (13-A6 rules) | — | **Done, passed** |
 | 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
-| 14-lite | Hygiene, cut to what v1 needs | No | A8 golden-decision test **done** with `cp-06`; the repo move is the user's, pending |
-| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
+| 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
+| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **In progress** on `task/07-opponent-model` |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
 | 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
