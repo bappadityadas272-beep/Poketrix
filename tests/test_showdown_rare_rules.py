@@ -5,11 +5,17 @@ fewer than 30 times in the 2,000 simulated battles (most of them never) is pinne
 rule depends on chance for its test. The line shapes are the ones the simulator's source emits.
 """
 
+import gzip
+import json
+from pathlib import Path
+
 import pytest
 from test_showdown import P1, P2, active, evidence, play
 
-from poketrix.showdown import parse_battle
+from poketrix.showdown import parse_battle, parse_line
 from poketrix.showdown.validation import load_battles
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 # --------------------------------------------------------------------------- R11: Transform
 
@@ -232,3 +238,47 @@ def test_gen1_desync_hint_after_a_failed_counter_covers_no_later_move():
     )
     assert evidence(tracker, P2).revealed_moves == ["bodyslam"]
     assert tracker.rules["move not revealed: Gen 1 Desync Clause"] == 0
+
+
+# --------------------------------------------------------------------------- transformations
+
+
+def test_a_transformed_pokemon_keeps_its_own_species_through_a_forme_change():
+    """Found by the Phase 6 evaluation: transforming into a Pokémon with formes is announced
+    as a forme change as well, and Ditto was then taken to *be* an Arceus."""
+    for gen, target in ((4, "Arceus, L70"), (4, "Giratina, L72"), (3, "Deoxys, L80")):
+        name = target.split(",")[0]
+        tracker = play(
+            f"|move|p1a: Ditto|Transform|p2a: {name}",
+            f"|-transform|p1a: Ditto|p2a: {name}",
+            f"|-formechange|p1a: Ditto|{name}|",
+            gen=gen, p1="Ditto, L88", p2=target,
+        )
+        ditto = active(tracker, P1)
+        assert ditto.species.id == "ditto" and "transform" in ditto.volatiles
+        assert tracker.rules["forme change ignored: it is a transformation"] == 1
+        tracker.apply(parse_line("|switch|p1a: Mew|Mew, L80|100/100"))
+        assert tracker.state().sides[P1].team[0].species.id == "ditto"  # and stays so afterwards
+
+
+def test_a_real_forme_change_still_changes_the_forme():
+    tracker = play("|-formechange|p1a: Castform|Castform-Sunny|[msg]|[from] ability: Forecast",
+                   p1="Castform, L88")
+    assert active(tracker, P1).species.id == "castformsunny"
+    assert tracker.rules["forme change ignored: it is a transformation"] == 0
+
+
+def test_the_games_quarantined_in_the_phase_6_evaluation_now_read_through():
+    """Ruling 13-A7: Ditto into Arceus (twice) and Giratina, each from both players' logs."""
+    with gzip.open(FIXTURES / "quarantined_games.json.gz", "rt", encoding="utf-8") as file:
+        games = json.load(file)["games"]
+    assert [game["index"] for game in games] == [2000063, 2000252, 2000350]
+    for game in games:
+        assert "cannot have ability limber" in game["error"]
+        for log in game["logs"].values():
+            record = parse_battle(log)  # raised here before the fix
+            assert record.request_disagreements == {} and record.anomalies == ()
+            dittos = [mon for snapshot in record.snapshots
+                      for side in snapshot.state.sides.values() for mon in side.team
+                      if "transform" in mon.volatiles]
+            assert dittos and all(mon.species.id == "ditto" for mon in dittos)

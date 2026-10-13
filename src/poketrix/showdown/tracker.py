@@ -534,7 +534,13 @@ class BattleTracker:
 
     def _on_forme(self, event: ev.FormeEvent) -> None:
         self._credit_tag(event, event.pokemon)
-        self._mon(event.pokemon).species = self._species(event.species_name)
+        mon = self._mon(event.pokemon)
+        if mon.transformed:
+            # Transforming into a Pokémon that has formes (Arceus, Giratina, Deoxys) is shown
+            # as a forme change too. It is the copy's look: the Pokémon stays what it is.
+            self.rules["forme change ignored: it is a transformation"] += 1
+            return
+        mon.species = self._species(event.species_name)
 
     def _on_cant(self, event: ev.CantEvent) -> None:
         self._close_attack()
