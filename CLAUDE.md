@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-05b` merged; Phase 6 steps (a) and (b) built on `task/06-orchestrator`, awaiting review; step (c), the win rates, is Order 13 (2026-10-13)
+## Current state — `cp-06` merged (Phases 0–6 done; the turn engine wins 77.4% against max-damage); next: Phase 7, the opponent model, Order 15 (2026-10-14)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -58,6 +58,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
 | cp-05 | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 846 tests total |
 | cp-05b | Prior, held-out tables and battle fixtures rebuilt from Showdown's current source; 847 tests total |
+| cp-06 | `src/poketrix/advisor/` and `src/poketrix/arena/` — turn engine, decision policy, simulator harness, golden decisions; 910 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -164,11 +165,15 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
 - The player-mode ground truth needs player logs: `node build_battles.mjs 500 DIR 500` (307 MB;
   keep DIR outside OneDrive), then pass DIR to the validation.
 
-Turn engine (`from poketrix.advisor import TurnAdvisor`), on `task/06-orchestrator`, not merged:
-- Order 13 state (2026-10-13): tuning is finished and the setting is frozen (γ 0.5, `a_floor` 0,
-  `utility_scale` 1.5; pass it to `python -m poketrix.arena run`, the code defaults are still
-  1.0). **No evaluation game has been played**: the run waits for a ruling on pass mark E3.2
-  (options P1–P3 in the tracker). Evaluation indices 2,000,000–2,000,499 may be used once only.
+Turn engine (`from poketrix.advisor import TurnAdvisor`):
+- Evaluated once (Order 13): 77.4% of 4,000 paired games against a max-damage player, 93.5%
+  against the simulator's random player. The evaluated setting is the code's default
+  (`PolicySettings`: γ 0.5, `a_floor` 0, `utility_scale` 1.5). **Evaluation indices
+  2,000,000–2,000,499 are used up**; a changed policy is judged on a fresh range written in the
+  tracker first. A formula or setting change needs a stop.
+- **Golden decisions:** `tests/test_golden_decisions.py` replays eight recorded games and
+  requires every choice to come out as recorded. A refactor must keep it green; re-record
+  (`python -m poketrix.arena record`) only when the policy changes on purpose, and log it.
 - `poketrix.arena` (a dev tool, never imported by the runtime) plays paired games through
   `scripts/randbats/play_bridge.mjs`; results and tuning files live in
   `%LOCALAPPDATA%\poketrix-cache\arena`, quarantined games in `data/raw/quarantine/`.

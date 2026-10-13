@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (ruling 13-A7: S1 with a determinism check; win-rate marks passed)
+Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting for the user to move the repository)
 
 ## Status at a glance
 
@@ -26,8 +26,8 @@ listed below is v2.
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
 | 13 | One-shot evaluation (13-A6 rules) | — | **Win-rate marks PASSED** (5de7391). Health 3e missed in Gen 4 by one Ditto bug → ruling **13-A7** |
-| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **To do now** |
-| 14-lite | Hygiene, cut to what v1 needs | No | Queued |
+| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **Done: E3 passes, `cp-06` merged and tagged** (see "Order 13-A7 result") |
+| 14-lite | Hygiene, cut to what v1 needs | No | A8 golden-decision test **done** with `cp-06`; the repo move is the user's, pending |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
 | 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
@@ -2933,6 +2933,39 @@ On `task/06-orchestrator`:
 5. Re-judge 3e for that cell. If quarantine is at most 0.5% (it is expected to be 0), the full E3 verdict is **PASS**. Then follow
    13-R's pass path: A4 README table → record the golden games → green `pytest` → merge `--no-ff` → tag `cp-06` → push → log.
 6. **Tell the user you are idle** so they can move the repository, then continue with 14-lite and Phase 7 as written.
+
+#### Order 13-A7 result (2026-10-14): **E3 PASSES. `cp-06` merged and tagged.**
+
+| Step | Result |
+|------|--------|
+| Fix (`e8c6ac0`) | While a Pokémon is transformed, a `-formechange` line is the copy's look and no longer changes its species. Tested for Arceus and Giratina (Gen 4) and Deoxys (Gen 3); a real forme change (Castform) still works. Gens 1–2 have no forme-change lines. The three quarantined games are a fixture (`tests/fixtures/quarantined_games.json.gz`) and now read through from both players' logs. Ground truth: still 0 false claims on 2,000 battles |
+| Re-run | Gen 4, policy v max-damage, indices 2,000,000–2,000,499, frozen setting, into its own file; the first run's file is untouched |
+| **Determinism check** | **994 of 994 games of the 497 untouched pairs are identical: same winner, same number of turns, same number of decisions** |
+| The three pairs | 2000063: won 1 of 2; 2000252: won 2; 2000350: won 2 |
+| Quarantine | 0 pairs in every generation and match |
+
+Final figures, with Gen 4 of policy v max-damage from the re-run and everything else as first played:
+
+| Match | Gen 1 | Gen 2 | Gen 3 | Gen 4 | Pooled | 95% interval |
+|-------|-------|-------|-------|-------|--------|--------------|
+| Policy v max-damage | 68.7% | 79.5% | 81.0% | 80.3% (803 of 1,000) | **77.4%** (3,095 of 4,000) | 76.1–78.6% |
+| Policy v random | 84.7% | 95.2% | 97.3% | 96.6% | 93.5% | 92.6–94.2% |
+| Max-damage v random | 84.2% | 88.9% | 89.9% | 86.8% | 87.5% | 86.4–88.4% |
+
+All E3 marks pass: 1a (lower bound 76.1%), 1b (lowest generation 68.7%), 2a (+6.0, interval +4.7 to +7.3), 2b (all four), 3a
+(0 illegal), 3b (0 errors in 259,873 decisions), 3c (28 timeouts), 3d (p95 45 ms), 3e (0 quarantined). The report is saved at
+`%LOCALAPPDATA%\poketrix-cache\arena\eval_report_final.txt`.
+
+Pass path carried out:
+- **A4:** the README has the results table and the headline sentence, with what the result does and does not show.
+- **The evaluated setting is now the code's default** (`PolicySettings.utility_scale` 1.5; γ and `a_floor` were already the
+  defaults), so what ships is what was measured.
+- **A8 (Order 14-lite), done here because 13-A7 asks for it:** `tests/fixtures/golden_decisions.json.gz` holds two games per
+  generation (policy against max-damage, both sides' streams, 519 decisions, 48 KB). `tests/test_golden_decisions.py` replays them
+  in plain Python and requires every choice of both players to come out as recorded. Re-record with
+  `python -m poketrix.arena record`, only when the policy changes on purpose. The harness's line handling moved into
+  `read_chunk`, shared by live play and the replay.
+- 910 tests pass; `ruff` clean; merged `--no-ff`, tagged `cp-06`, pushed.
 
 ### Notes for v2 (no action now)
 - **Self-destruct advice:** about 1 per 12 games, and about half of those with a KO chance under 50%. Audit it in v2, and consider requiring a

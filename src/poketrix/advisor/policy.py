@@ -72,11 +72,12 @@ from .situation import Situation
 
 @dataclass(frozen=True)
 class PolicySettings:
-    """The policy's tunable numbers. Tuned on the tuning seeds only, never on evaluation games."""
+    """The policy's tunable numbers. The defaults are the setting frozen after tuning (on the
+    tuning seeds only) and then evaluated once: 77.4% of 4,000 games against max-damage."""
 
     gamma: float = 0.5  # tempo: the weight of the second exchange
     a_floor: float = 0.0  # their attack chance is taken to be at least this
-    utility_scale: float = 1.0  # multiplies every status-move value below
+    utility_scale: float = 1.5  # multiplies every status-move value below
 
 
 DEFAULT_SETTINGS = PolicySettings()
@@ -84,7 +85,7 @@ DEFAULT_SETTINGS = PolicySettings()
 # that field, and these five are all there are in Gens 1-4.
 SELF_FAINT = frozenset({"explosion", "selfdestruct", "memento", "healingwish", "lunardance"})
 
-# ---- provisional constants (decision Q2): tuned on the tuning seeds only, in Order 13.
+# ---- status-move values (decision Q2), each multiplied by `utility_scale`.
 RECOVERY = {
     "recover": 0.5, "softboiled": 0.5, "roost": 0.5, "slackoff": 0.5, "milkdrink": 0.5,
     "moonlight": 0.5, "morningsun": 0.5, "synthesis": 0.5, "rest": 1.0,

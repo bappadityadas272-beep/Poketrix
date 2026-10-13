@@ -2,6 +2,7 @@
 
     python -m poketrix.arena run policy-maxdamage --first 2000000 --pairs 500 --out eval.jsonl
     python -m poketrix.arena report eval.jsonl [more.jsonl ...]
+    python -m poketrix.arena record          re-record the golden games (see golden.py)
 
 Matches: policy-maxdamage, policy-random, maxdamage-random (player 1 is named first).
 Every game is one JSON line in the output file, so a run can be stopped and started again:
@@ -26,6 +27,7 @@ from pathlib import Path
 
 from poketrix.advisor import PolicySettings
 
+from .golden import GOLDEN_FILE, record
 from .play import Bridge, GameResult, MaxDamagePlayer, Player, PolicyPlayer
 from .report import print_report
 
@@ -127,12 +129,15 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--utility-scale", type=float, default=defaults.utility_scale)
     show = commands.add_parser("report", help="win rates from result files")
     show.add_argument("files", type=Path, nargs="+")
+    commands.add_parser("record", help="re-record the golden games with the default policy")
     args = parser.parse_args(argv)
 
     def placed(path: Path) -> Path:
         return path if path.is_absolute() else cache_dir() / "arena" / path
 
-    if args.command == "run":
+    if args.command == "record":
+        print(f"{record()} decisions recorded in {GOLDEN_FILE}")
+    elif args.command == "run":
         settings = PolicySettings(gamma=args.gamma, a_floor=args.a_floor,
                                   utility_scale=args.utility_scale)
         run(args.match, args.gens, args.first, args.pairs, placed(args.out), settings)

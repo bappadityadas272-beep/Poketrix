@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -97,6 +98,7 @@ class SideTally:
     illegal: int = 0  # choices the simulator rejected: any is a bug
     trap_reasks: int = 0  # switches refused by a trapping ability and asked again (legitimate)
     guardrails: Guardrails = field(default_factory=Guardrails)
+    choices: list[OptionScore] = field(default_factory=list)  # every decision, in order
 
 
 @dataclass
@@ -124,6 +126,22 @@ def to_choice(snapshot: TurnSnapshot, option: OptionScore, nickname: str | None)
         if pokemon.pokemon.name == nickname:
             return f"switch {position}"
     raise ValueError(f"{nickname} is not in the request")
+
+
+REFUSED, INVALID = "refused", "invalid"
+
+
+def read_chunk(reader: BattleReader, chunk: str) -> Iterator[TurnSnapshot | str]:
+    """What one chunk of a player's stream asks of that player: each decision it must make
+    (a snapshot), and each choice of its the simulator turned down (`REFUSED` when a trapping
+    ability stops a switch and the request comes again, `INVALID` otherwise)."""
+    for line in chunk.split("\n"):
+        if line.startswith("|error|"):
+            yield REFUSED if _UNAVAILABLE in line else INVALID
+            continue
+        snapshot = reader.feed(line)
+        if snapshot is not None and snapshot.state.me.request is not None:
+            yield snapshot
 
 
 class Bridge:
@@ -179,17 +197,14 @@ class Bridge:
                 return GameResult(gen, index, swap, message["winner"], message["turns"], tallies)
             side = message["side"]
             self.log[side].append(message["chunk"])
-            for line in message["chunk"].split("\n"):
-                if line.startswith("|error|"):
-                    if _UNAVAILABLE in line:
-                        tallies[side].trap_reasks += 1  # the request comes again, corrected
-                    else:
-                        tallies[side].illegal += 1
-                        self._send(cmd="choose", side=side, choice=_DEFAULT)
-                    continue
-                snapshot = readers[side].feed(line)
-                if snapshot is not None and snapshot.state.me.request is not None:
-                    choice = self._decide(players[side], readers[side], snapshot, tallies[side])
+            for asked in read_chunk(readers[side], message["chunk"]):
+                if asked == REFUSED:
+                    tallies[side].trap_reasks += 1  # the request comes again, corrected
+                elif asked == INVALID:
+                    tallies[side].illegal += 1
+                    self._send(cmd="choose", side=side, choice=_DEFAULT)
+                else:
+                    choice = self._decide(players[side], readers[side], asked, tallies[side])
                     self._send(cmd="choose", side=side, choice=choice)
 
     @staticmethod
@@ -197,6 +212,7 @@ class Bridge:
                 tally: SideTally) -> str:
         choice = player.choose(snapshot)
         tally.decisions += 1
+        tally.choices.append(choice.option)
         if choice.report is not None:
             tally.statuses[choice.report.status.value] += 1
             tally.latency_ms.append(round(choice.report.latency_ms, 2))
