@@ -32,3 +32,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 | cp-04 | Bayesian set uncloaker + threat report (completes Phase 4) | 2026-10-11 | 731 passed |
 | cp-05 | Showdown battle-log parser: spectator and player mode, evidence rules, staleness measurement (completes Phase 5) | 2026-10-13 | 846 passed (+8 timing) |
 | cp-05b | Prior rebuilt from Showdown's current source (commit `942cda7`); ladder staleness 0 in every generation | 2026-10-13 | 847 passed |
+| cp-06 | Turn engine: stages, score-based policy, templates and guardrail, simulator harness; evaluated at 77.4% against max-damage over 4,000 paired games (completes Phase 6) | 2026-10-14 | 910 passed |

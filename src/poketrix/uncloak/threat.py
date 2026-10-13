@@ -8,8 +8,9 @@ our Pokémon, and the results are averaged with the posterior as weights.
 from dataclasses import dataclass
 from time import perf_counter
 
-from poketrix.calc import evaluate_move
+from poketrix.calc import evaluate_move, expected_hp_share
 from poketrix.calc.engine import NO_CONDITIONS, SideConditions
+from poketrix.calc.stats import battle_stats, current_hp
 from poketrix.dex import Dex
 from poketrix.schemas import (
     BattlePokemon,
@@ -19,6 +20,7 @@ from poketrix.schemas import (
     PokemonSet,
     SetHypothesis,
     SetPosterior,
+    Stat,
     StatSpread,
     SubsystemResult,
     SubsystemStatus,
@@ -30,7 +32,7 @@ from .prior import SetPrior
 _NO_FIELD = FieldState()
 
 
-def _hypothesis_set(
+def hypothesis_set(
     theirs: BattlePokemon, hypothesis: SetHypothesis, prior: SetPrior
 ) -> PokemonSet:
     """The opponent's full set under one hypothesis.
@@ -112,11 +114,12 @@ def _report(
     # A move's damage depends on the attacker's item, ability and spread, not on its other
     # moves, and many hypotheses share those: evaluate each combination once.
     evaluated: dict[tuple, MoveEvaluation] = {}
-    p_ko_best_move = 0.0
+    p_ko_best_move = expected_best_share = 0.0
+    our_hp = current_hp(ours, battle_stats(ours)[Stat.HP])
     for hypothesis in posterior.hypotheses:
         if hypothesis.posterior <= 0:
             continue
-        known = _hypothesis_set(theirs, hypothesis, prior)
+        known = hypothesis_set(theirs, hypothesis, prior)
         attacker = theirs.model_copy(update={"known_set": known})
         stats_key = (known.item, known.ability, known.spread.model_dump_json())
         for move_id in hypothesis.moves:
@@ -127,13 +130,17 @@ def _report(
                 )
             tallies.setdefault(move_id, _MoveTally()).add(hypothesis.posterior, evaluated[key])
         # Under this hypothesis the opponent's best move for a knockout is one specific move.
-        best = max(_ko_this_turn(evaluated[(move_id, *stats_key)]) for move_id in hypothesis.moves)
-        p_ko_best_move += hypothesis.posterior * best
+        own = [evaluated[(move_id, *stats_key)] for move_id in hypothesis.moves]
+        p_ko_best_move += hypothesis.posterior * max(_ko_this_turn(e) for e in own)
+        expected_best_share += hypothesis.posterior * max(
+            expected_hp_share(e, our_hp) or 0.0 for e in own
+        )
     threats = [tally.threat(move_id) for move_id, tally in tallies.items()]
     threats.sort(key=lambda threat: (-threat.probability, threat.move_id))
     return ThreatReport(
         attacker_species=theirs.species.id, defender_species=ours.species.id, threats=threats,
         p_ko_best_move=min(1.0, p_ko_best_move),
+        expected_best_share=min(1.0, expected_best_share),
         ko_lower_bound=any(threat.unsupported_reason is not None for threat in threats),
     )
 

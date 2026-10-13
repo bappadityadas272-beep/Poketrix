@@ -20,15 +20,23 @@ from .generation import GEN_RULES, GenRules, category_for_type, rules_for
 from .outputs import (
     ActionPrediction,
     DamageRange,
+    Decision,
     KOChance,
     MathReport,
     MoveEvaluation,
+    MoveOutlook,
     MoveThreat,
+    OffenceSheet,
+    OpponentSets,
+    OptionScore,
+    OrderSheet,
     Recommendation,
     SetHypothesis,
     SetPosterior,
     SubsystemResult,
     ThreatReport,
+    ThreatSheet,
+    TurnReport,
 )
 from .pokemon import (
     BaseStats,

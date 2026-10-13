@@ -20,6 +20,24 @@ from .ko import ko_chances
 _NO_FIELD = FieldState()
 
 
+def expected_hp_share(evaluation: MoveEvaluation, remaining_hp: int) -> float | None:
+    """Expected share of the target's remaining HP one use removes, accuracy included.
+
+    Damage past a knock-out is worth nothing, so each roll counts for at most the HP that is
+    left. Critical hits are left out (they only raise it); a multi-hit move counts its mean
+    number of hits. `None` for a status or unsupported move, or a target with no HP.
+    """
+    damage = evaluation.damage
+    if damage is None or remaining_hp <= 0:
+        return None
+    hits = damage.hit_distribution or {1: 1.0}
+    share = sum(
+        odds * min(remaining_hp, count * roll)
+        for count, odds in hits.items() for roll in damage.rolls
+    ) / (len(damage.rolls) * remaining_hp)
+    return evaluation.accuracy * share
+
+
 def evaluate_move(
     attacker: BattlePokemon, defender: BattlePokemon, move: Move,
     field: FieldState = _NO_FIELD,

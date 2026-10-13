@@ -70,6 +70,53 @@ def _snapshot(tracker: BattleTracker, perspective: PlayerSlot | None, events: li
     )
 
 
+class BattleReader:
+    """Reads a battle line by line, as it happens, and hands out each snapshot when it is due.
+
+    A live client feeds lines in the order they arrive; `parse_battle` feeds a whole log.
+    """
+
+    def __init__(self, perspective: PlayerSlot | None = None) -> None:
+        self.tracker = BattleTracker()
+        self._perspective = perspective
+        self._pending: list[Event] = []
+        self._turn_began = False  # a turn line was read and its snapshot is still to be taken
+        self._last: tuple[int, int] | None = None  # (turn, decision_index) of the last snapshot
+
+    def _take(self, final: bool = False) -> TurnSnapshot:
+        tracker = self.tracker
+        same_turn = self._last is not None and self._last[0] == tracker.turn
+        index = self._last[1] + 1 if same_turn else 0
+        snapshot = _snapshot(tracker, self._perspective, self._pending, index, final)
+        self._last = (tracker.turn, index)
+        self._pending, self._turn_began = [], False
+        return snapshot
+
+    def feed(self, line: str) -> TurnSnapshot | None:
+        """Read one protocol line. Returns the snapshot it completes, if any: a turn's start
+        (a spectator's log) or a decision (a player's own log, at the request)."""
+        event = parse_line(line)
+        if event is None:
+            return None
+        asks = isinstance(event, RequestEvent) and not event.wait
+        due = None
+        if self._turn_began and not asks:  # no request follows the turn line: a spectator's log
+            due = self._take()
+        self.tracker.apply(event)
+        self._pending.append(event)
+        if isinstance(event, TurnEvent):
+            self._turn_began = True
+        elif asks and self.tracker.turn:
+            due = self._take()
+        return due
+
+    def close(self) -> TurnSnapshot | None:
+        """The closing snapshot of a log that has ended, if anything happened since the last."""
+        if self.tracker.turn and (self._pending or self._turn_began):
+            return self._take(final=not self._turn_began)
+        return None
+
+
 def parse_battle(
     text: str, perspective: PlayerSlot | None = None, strict: bool = False
 ) -> BattleRecord:
@@ -78,37 +125,16 @@ def parse_battle(
     The perspective defaults to the player whose requests the log carries, else to p1.
     `strict` makes an unknown message type an error.
     """
-    tracker = BattleTracker()
-    snapshots: list[TurnSnapshot] = []
-    pending: list[Event] = []
-    turn_began = False  # a turn line was read and its snapshot is still to be taken
-
-    def take(final: bool = False) -> None:
-        nonlocal pending, turn_began
-        same_turn = snapshots and snapshots[-1].turn == tracker.turn
-        index = snapshots[-1].decision_index + 1 if same_turn else 0
-        snapshots.append(_snapshot(tracker, perspective, pending, index, final))
-        pending, turn_began = [], False
-
-    for line in text.splitlines():
-        event = parse_line(line)
-        if event is None:
-            continue
-        asks = isinstance(event, RequestEvent) and not event.wait
-        if turn_began and not asks:  # no request follows the turn line: a spectator's log
-            take()
-        tracker.apply(event)
-        pending.append(event)
-        if isinstance(event, TurnEvent):
-            turn_began = True
-        elif asks and tracker.turn:
-            take()
+    reader = BattleReader(perspective)
+    found = [reader.feed(line) for line in text.splitlines()]
+    tracker = reader.tracker
     if strict and tracker.unknown:
         raise ValueError(f"unknown message types: {dict(tracker.unknown)}")
-    if tracker.turn and (pending or turn_began):
-        take(final=not turn_began)
+    found.append(reader.close())
     return BattleRecord(
-        format_id=tracker.format_id, snapshots=tuple(snapshots), winner=tracker.winner,
+        format_id=tracker.format_id,
+        snapshots=tuple(snapshot for snapshot in found if snapshot is not None),
+        winner=tracker.winner,
         ended=tracker.ended, player=tracker.player,
         request_disagreements=dict(tracker.disagreements),
         unknown_message_types=dict(tracker.unknown),

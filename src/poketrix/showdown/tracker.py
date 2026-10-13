@@ -33,6 +33,7 @@ from poketrix.schemas import (
     Status,
     Weather,
     move_matches,
+    moves_fit,
     rules_for,
 )
 
@@ -44,6 +45,7 @@ from .evidence import (
     chose_the_move,
 )
 from .ownset import SetSource, own_set
+from .protocol import DESYNC
 
 _MAX_TEAM_SIZE = 6
 _STANDARD_DURATION = 5  # turns of weather, screens, Trick Room and Gravity without an item
@@ -88,6 +90,7 @@ class _Mon:
     transformed: bool = False
     mimicked_move: str | None = None
     known_set: PokemonSet | None = None  # our own Pokémon, from the first request
+    acted: bool = False  # has used a move since it came in
     hp_exact: tuple[int, int] | None = None  # (current, maximum): our own side only
     # Memory for the "no Leftovers recovery" rule, reset every turn. `seen_at_full_hp` is
     # cleared when a move leaves the Pokémon damaged, which always happens before the
@@ -97,6 +100,7 @@ class _Mon:
     recovered_by_item: bool = False
 
     def leave_field(self) -> None:
+        self.acted = False
         self.boosts.clear()
         self.volatiles.clear()
         self.transformed = False
@@ -110,6 +114,7 @@ class _Side:
     team_size: int = 6
     mons: list[_Mon] = field(default_factory=list)
     active: _Mon | None = None
+    last_move: str | None = None  # the last move any of its Pokémon used
     conditions: dict[SideCondition, int] = field(default_factory=dict)  # hazard -> layers
     started: dict[SideCondition, int] = field(default_factory=dict)  # timed -> turn it began
 
@@ -162,6 +167,7 @@ class BattleTracker:
         # new one, and the other line must not take it away (both may hold the same item).
         self._received: set[int] = set()
         self._after_upkeep = False
+        self._desynced = False  # the next move line is a Gen 1 Desync Clause substitution
         self._dex: Dex | None = None
         self._item_ids: frozenset[str] = frozenset()
         self._handlers: dict[type, Callable] = {
@@ -197,6 +203,11 @@ class BattleTracker:
             self._swapping.clear()
             self._received.clear()
         self._request = None  # the battle has moved on: the last request is answered
+        # The Desync Clause hint speaks of the move line right after it and of nothing else
+        # (the same words also follow a failed Gen 1 Counter, where no move line comes next).
+        announces = isinstance(event, ev.TagEvent) and event.kind == DESYNC
+        if not (announces or isinstance(event, ev.MoveEvent)):
+            self._desynced = False
         self._handlers[type(event)](event)
 
     @property
@@ -218,6 +229,10 @@ class BattleTracker:
 
     def set_species_id(self, slot: PlayerSlot, index: int) -> str:
         return self._sides[slot].mons[index].set_species_id
+
+    def nickname(self, slot: PlayerSlot, index: int) -> str:
+        """The name the protocol uses for a Pokémon: what a choice or a request refers to."""
+        return self._sides[slot].mons[index].nickname
 
     def state(self, perspective: PlayerSlot | None = None) -> GameState:
         """A validated snapshot. Needs both leads on the field.
@@ -447,6 +462,8 @@ class BattleTracker:
         self._close_attack()
         mon = self._mon(event.pokemon)
         chosen = self._chose(mon, event)
+        mon.acted = True
+        self._sides[event.pokemon.player].last_move = event.move_id
         if chosen:
             before = len(mon.book.ruled_out_items)
             mon.book.chose(event.move_id)
@@ -463,9 +480,23 @@ class BattleTracker:
     def _chose(self, mon: _Mon, event: ev.MoveEvent) -> bool:
         """Whether the move is one of the Pokémon's own four, counting why when it is not."""
         source = event.source
+        desynced, self._desynced = self._desynced, False
         if not chose_the_move(event.move_id, source):
             called = f"called by {source.id}" if source is not None else "Struggle or recharge"
             self.rules[f"move not revealed: {called}"] += 1
+            return False
+        if desynced:
+            self.rules["move not revealed: Gen 1 Desync Clause"] += 1
+            return False
+        # Gen 1: a Pokémon sent in while its side is held by a trapping move repeats the move
+        # its side selected last, whether it knows that move or not. Seen from outside, that
+        # is a first move equal to its predecessor's last one: conclude nothing from it.
+        carried = self._sides[event.pokemon.player].last_move == event.move_id and not mon.acted
+        if self.gen is Generation.RBY and carried:
+            self.rules["move not revealed: Gen 1, repeats its side's last move"] += 1
+            return False
+        if mon.known_set is not None and not moves_fit([event.move_id], mon.known_set.moves):
+            self.rules["move not revealed: not in our own set"] += 1
             return False
         if mon.transformed:
             self.rules["move not revealed: used while transformed"] += 1
@@ -503,7 +534,13 @@ class BattleTracker:
 
     def _on_forme(self, event: ev.FormeEvent) -> None:
         self._credit_tag(event, event.pokemon)
-        self._mon(event.pokemon).species = self._species(event.species_name)
+        mon = self._mon(event.pokemon)
+        if mon.transformed:
+            # Transforming into a Pokémon that has formes (Arceus, Giratina, Deoxys) is shown
+            # as a forme change too. It is the copy's look: the Pokémon stays what it is.
+            self.rules["forme change ignored: it is a transformation"] += 1
+            return
+        mon.species = self._species(event.species_name)
 
     def _on_cant(self, event: ev.CantEvent) -> None:
         self._close_attack()
@@ -713,6 +750,9 @@ class BattleTracker:
         mon.book.ability_was_changed()
 
     def _on_tag(self, event: ev.TagEvent) -> None:
+        if event.kind == DESYNC:
+            self._desynced = True
+            return
         self._credit_tag(event, event.pokemon)
 
     # ------------------------------------------------------------------ player mode

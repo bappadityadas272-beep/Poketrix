@@ -33,14 +33,14 @@ def _byte_scale(accuracy: int) -> int:
 _GEN1_STAGE_PERCENT = (25, 28, 33, 40, 50, 66, 100, 150, 200, 250, 300, 350, 400)  # stages -6..+6
 
 
-def _gen1_speed(side: Side) -> int:
+def classic_speed(side: Side) -> int:
     speed = apply_stage_classic(side.stats[Stat.SPE], side.stage(BoostStat.SPE))
     return max(1, speed // 4) if side.status is Status.PARALYSIS else speed
 
 
 def gen1_ohko_fails(c: Context) -> bool:
     """A one-hit KO move cannot hit a faster target."""
-    return _gen1_speed(c.defender) > _gen1_speed(c.attacker)
+    return classic_speed(c.defender) > classic_speed(c.attacker)
 
 
 def gen1_hit_chance(c: Context) -> float:

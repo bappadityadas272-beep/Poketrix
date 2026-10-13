@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-13 (Orders 9 and 10 done: `cp-05` and `cp-05b` merged and tagged; Order 11 next)
+Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting for the user to move the repository)
 
 ## Status at a glance
 
@@ -11,25 +11,28 @@ Last updated: 2026-10-13 (Orders 9 and 10 done: `cp-05` and `cp-05b` merged and 
 | 2 | Dex data layer (Gen 1–4 species and moves) | Done, merged | `cp-02` |
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
-| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator and player mode; prior rebuilt from the current source) | `cp-05`, `cp-05b` |
-| 6 | Orchestrator + decision policy + synthesis guardrail | Next: design proposal (Order 11) | |
+| 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | 12b **accepted**; tuning running; evaluation next under amended pass marks (13-A) | `cp-06` pending |
 | 7 | XGBoost action predictor | Not started | |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 847 passing on `main` (`cp-05b`) in the default run, plus 8 of 8 with `pytest -m timing` (taken at `cp-05`). `ruff` is clean.
+Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
+**Target: a demonstrable v1 by 2026-10-16** (proven engine + learned opponent model + read-only overlay). Anything not
+listed below is v2.
+
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 7 | Test hygiene (R9/R11/R12/R13) | No | **Done** (`e8c35e9`) |
-| 8 | Task 05 step 2: player mode, real replays, staleness | Yes | **Done, approved** (`c3fe27d`, `76c6328`) |
-| 9 | D2 `decision_index`, then merge and tag `cp-05` | No (pre-approved) | **Done** (`cp-05`; see the result under Order 9) |
-| 10 | Rebuild the prior from Showdown's current source (R8) | No if the acceptance checks pass, otherwise stop | **Done** (`cp-05b`; all checks passed, ladder staleness now 0) |
-| 11 | Phase 6 design proposal: orchestrator, decision policy, synthesis | **Yes**, after the proposal | **To do** |
+| 13 | One-shot evaluation (13-A6 rules) | — | **Win-rate marks PASSED** (5de7391). Health 3e missed in Gen 4 by one Ditto bug → ruling **13-A7** |
+| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **Done: E3 passes, `cp-06` merged and tagged** (see "Order 13-A7 result") |
+| 14-lite | Hygiene, cut to what v1 needs | No | A8 golden-decision test **done** with `cp-06`; the repo move is the user's, pending |
+| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
+| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
+| 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 5", near the end of this file. The optional
-"Advice for Claude Code" section follows the orders; apply an item whenever it fits the work you are doing.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -2104,9 +2107,9 @@ Verdict: **APPROVED.** I checked the following on the user's machine (`76c6328`)
   uncloaker: P(the opponent's ability is Shadow Tag or Arena Trap, or Magnet Pull against our Steel-type), using the ability marginal.
   Any switch recommendation must carry that risk, and when it is ≥ 0.5 the policy must also give a move alternative.
 
-## ▶ ACTIVE — Orders for Claude Code, batch 5 (do these in order, stopping where marked)
+## [Completed] Orders for Claude Code, batch 5 (do these in order, stopping where marked)
 
-### Order 9: finish and close Phase 5 (pre-approved, no stop if green)
+### ✅ DONE — Order 9: finish and close Phase 5 (pre-approved, no stop if green) _(→ cp-05)_
 1. On `task/05-showdown-parser`, add `decision_index` (D2), and check the D1 tests (three cases, active Pokémon only).
 2. Run the full suite and `ruff`, then `pytest -m timing`, with AC power and the machine idle if possible. Log the medians.
 3. Run `git switch main`, then `git merge --no-ff task/05-showdown-parser`, then `git tag -a cp-05 -m "Showdown parser: spectator + player mode, evidence, staleness"`.
@@ -2123,7 +2126,7 @@ new); `ruff` clean.
 | A1 | Applied. `ownset.py` takes a `SetSource` protocol (`sets_for`), and the tracker's default source imports the prior on first use. Importing `poketrix.showdown` no longer loads `poketrix.uncloak`; a spectator log never does. |
 | Timing | `pytest -m timing`: 8 of 8 passed. The laptop was on battery (66%) at 14% CPU load, so not the AC-power run the order asked for. Medians: parsing 0.008 ms per log line; one posterior update 0.53 ms (41 hypotheses); a whole player-mode battle with 33 decisions 29 ms. |
 
-### Order 10: rebuild the prior from Showdown's current source (R8)
+### ✅ DONE — Order 10: rebuild the prior from Showdown's current source (R8) _(→ cp-05b)_
 The user is told about the download size in the reviewer's message. If the user said no, skip this order and mark it "Skipped".
 Branch: `task/05b-prior-rebuild`.
 1. **Smallest source first:** check whether an npm release of `pokemon-showdown` newer than 0.11.11 contains the
@@ -2192,7 +2195,7 @@ never wrong. It has its own test.
 
 The battle fixtures and the held-out tables were regenerated from the same source.
 
-### Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.**
+### ✅ DONE — Order 11: Phase 6 design proposal, the turn engine. **STOP after the proposal.** _(→ proposal decided 2026-10-12)_
 Branch: `task/06-orchestrator`. Write the proposal as a new section in this tracker. Phase 6 turns one player-mode
 snapshot into one validated, explained recommendation within 500 ms. Cover:
 
@@ -2221,6 +2224,954 @@ snapshot into one validated, explained recommendation within 500 ms. Cover:
    the bridge design, templates versus an LLM, and the `TurnReport` shape.
 
 Then **stop** for the user's approval before writing any code.
+
+## Task 06 design proposal — the turn engine (decided 2026-10-12, approved with changes)
+
+Branch `task/06-orchestrator`. No code yet. Goal: one player-mode snapshot in, one validated
+and explained recommendation out, in under 500 ms, with every number traceable.
+
+### 1. Pipeline
+
+New package `src/poketrix/advisor/`. A plain state machine: a table of stages run in order, each
+returning a `SubsystemResult`, each with a budget.
+
+| # | Stage | Input → output | Budget | If it fails or times out |
+|---|-------|----------------|--------|--------------------------|
+| 1 | Uncloak | evidence of each opposing Pokémon still alive → `SetPosterior` each | 20 ms | That Pokémon has no posterior; stages 2–4 skip it and say so |
+| 2 | Threats | their active against our active and each legal switch-in → `ThreatReport` each | 150 ms | Switches are not scored; the policy chooses among moves only |
+| 3 | Offence | each legal move against their active, over the set hypotheses → `MoveOutlook` | 100 ms | Moves are ranked by what was evaluated; the rest are "unknown" |
+| 4 | Order | P(we move first) per move: priority, speed over the hypotheses, paralysis, Trick Room, Choice Scarf | 10 ms | 0.5 is assumed and reported as assumed |
+| 5 | Opponent | `ActionPrediction`, `model_version="heuristic-0"` | 5 ms | Assume they attack |
+| 6 | Policy | everything above → scored options → one choice | 10 ms | The legal move with the highest expected damage, else the first legal action |
+| 7 | Write | the choice → `Recommendation`, validated against the state and `allowed_numbers` | 5 ms | A fixed minimal sentence with no numbers |
+
+- **Timeouts without threads.** The work is CPU-bound Python, so a thread cannot be stopped from
+  outside. One `Deadline` is passed down; a stage checks it between units of work (per Pokémon,
+  per move) and returns `timeout` with what it has finished. Stages are ordered so the most
+  useful work happens first (our active before the bench).
+- **There is always a legal answer.** The last fallback needs only the request.
+- **`TurnReport`** (new schema in `schemas/outputs.py`) carries: the snapshot key
+  `(turn, decision_index)`; every stage's `SubsystemResult` (payload, status, latency); the scored
+  options; the final `Recommendation`; and `numbers`, a flat `dict[str, float]` in which each
+  stage registers what it computed under a stable key (`our.icebeam.ko`, `their.p_ko`,
+  `switch.2.expected_pct`, `trap.risk`). `numbers` is exactly what the guardrail receives as
+  `allowed_numbers`, so a number in the text is traceable to a stage by its key.
+
+### 2. Decision policy v0 (deterministic, no ML)
+
+All quantities are fractions of *remaining* HP, weighted by the posterior.
+
+| Symbol | Meaning | Source |
+|--------|---------|--------|
+| `d(m)` | Expected share of their active's remaining HP our move `m` removes, accuracy included | Offence |
+| `k(m)` | P(`m` knocks their active out this turn) | Offence (exact KO odds) |
+| `D(X)` | Expected share of our Pokémon X's remaining HP their best move removes | Threats |
+| `K(X)` | P(they knock X out this turn if they attack) = `p_ko_best_move` | Threats |
+| `f(m)` | P(we move before them) | Order |
+| `a` | P(they attack) | Opponent |
+| `t` | P(we are trapped) (R14) | Ability marginal of the posterior |
+
+- **One exchange with move `m`:** `trade(m) = d(m)·(1 − a·K·(1 − f(m))) − a·D·(1 − k(m)·f(m))`.
+  We deal our damage unless they knock us out first; we take theirs unless we knock them out first.
+- **Matchup value of our Pokémon X against their active:** `M(X) = max over X's moves of trade(m)` with `a = 1`.
+- **Staying, move `m`:** `S = trade(m) + P(we survive the turn)·M(active)`.
+- **Switching to X:** `S = −a·D(X) − hazard(X) + P(X survives the hit)·M(X)`. The switch-in takes
+  the hit now and then has its own matchup. `hazard(X)` is the exact entry damage.
+- **Trapping (R14):** `t` = P(their ability is Shadow Tag or Arena Trap and applies, or Magnet Pull
+  against our Steel-type). A switch scores `(1 − t)·S(switch) + t·S(best move)`. Any switch
+  recommendation states `t` when it is above 0, and when `t ≥ 0.5` the text also names the best move.
+- **Forced switch:** the legal switch-in with the highest `M(X) − hazard(X)`.
+- **Status and utility moves.** v0 scores three kinds and nothing else: recovery (the HP it
+  restores, as if it were damage undone), a hazard that is not up yet, and a sleep, paralysis or
+  poison move on a healthy target. The last two get fixed, documented constants (decision Q2). Every
+  other status move scores 0 and is never recommended in v0.
+- **Ties, in order:** higher score; higher `k`; higher accuracy; a move before a switch; the
+  request's own order. No randomness, so a game replays identically.
+- **Opponent heuristic-0:** `p_switch = clamp(0.10 + 0.40·k_best, 0.05, 0.60)` if they have a
+  healthy Pokémon on the bench, else 0, where `k_best` is our best KO chance on their active. The
+  rest is split between attack and utility by the share of damaging moves in their posterior
+  moveset. These constants are placeholders that Phase 7 replaces.
+- **Fallbacks.** R5: an unsupported move has no `d` or `k`; it is listed as unknown, never as 0,
+  and if their best move is unsupported the text says the KO chance is a lower bound. R11: if
+  either active is transformed there are no damage numbers; the engine returns status `fallback`
+  with the highest-power legal move and says why.
+
+Known limits of v0: it looks one exchange ahead plus the following matchup; it does not plan
+set-up moves, PP, weather turns, or predict their switch-in.
+
+### 3. Evaluation: win rate in the simulator
+
+- **Bridge (dev tool, not runtime).** `scripts/randbats/play_bridge.mjs` runs battles in the pinned
+  simulator, one long-lived process for many games. For a side marked `external` it prints every
+  protocol chunk as a JSON line and reads that side's choice (`move 2`, `switch 3`) from stdin. A
+  side marked `random` is the simulator's own `RandomPlayerAI`.
+- **Python side.** `scripts/play_games.py` feeds the lines to `BattleTracker`, calls a `Player`
+  (`choose(snapshot) -> Recommendation`) and sends the choice back. Two players: the policy, and
+  the max-damage baseline, which uses the same Offence stage and always picks the highest
+  expected damage (a forced switch goes to the first legal Pokémon). Both use only what their own
+  side can see.
+- **Matches:** policy against random and policy against max-damage, 500 games per generation
+  each (4,000 games), with fixed seeds. Plus max-damage against random, 200 per generation, to
+  show how strong the baseline is.
+- **Reported per generation and opponent:** wins of games with the 95% Wilson interval, average
+  turns, the share of decisions that ended in `fallback`, `timeout` or `error`, and choices the
+  simulator rejected (must be 0; any is a bug).
+- **Cost:** about 35 decisions per game for each external side. At 50–150 ms per decision that is
+  2–5 hours in one process; four processes in parallel bring it under 90 minutes.
+- **What it proves and what it does not.** Beating these two shows the pipeline's advice is better
+  than random and than greedy play. It says nothing yet about play against people.
+
+### 4. Synthesis
+
+- v0 is **templates, no LLM**: one template per kind of decision (attack for the knock-out, best
+  trade, defensive switch, forced switch, limited information). The headline fits 120 characters,
+  the explanation 600.
+- A template may only print values from `TurnReport.numbers`. `cited_numbers` holds those exact
+  values and the guardrail checks them and the action's legality. An extra test reads every number
+  out of the generated text and requires it to be the rounded form of a cited one.
+- Writers sit behind one small `Writer` protocol (`write(report) -> Recommendation`). An LLM writer
+  would be a second implementation: key from an environment variable, never in the repo, with
+  the template as its fallback when validation fails twice.
+- **Recommendation:** no LLM in Phase 6. It cannot improve the decision, and a network call does
+  not fit the 500 ms budget. Consider it in Phase 8 as an on-demand "explain more", outside the budget.
+
+### 5. Latency
+
+- Measure p50 and p95 per decision and per stage on the player-mode corpus (2,000 decisions per
+  generation, sampled with a fixed seed), on AC power with the machine idle. Gen 1 multi-hit
+  cases (R4) are reported separately.
+- Expected from the Phase 3–5 measurements: about 10 ms per threat report with the largest
+  hypothesis table, so up to 60 ms for six; Offence is of the same order. Target p95 under
+  250 ms; the hard limit stays 500 ms.
+- Optimise only what the measurement shows: first a per-turn cache of `evaluate_move` results,
+  then evaluating switch-ins only when staying scores badly.
+
+### 6. Out of scope
+
+The live client and overlay (Phase 8), the XGBoost predictor (Phase 7), doubles, an LLM writer,
+multi-turn search.
+
+### 7. Decisions for the user
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| Q1 | Policy: the one-exchange-plus-matchup score above, or a simpler rule list (attack if we can KO, switch if they can)? | The score. It is one formula, every term is a number we already compute, and the rule list is its special cases |
+| Q2 | Status moves in v0: recovery, hazards and sleep/paralysis/poison with fixed constants; all others never recommended? | Yes. Propose constants at review of the build, tuned only against the simulator results, and report them |
+| Q3 | Opponents and game counts: random and max-damage, 500 games per generation each, plus 200 of max-damage against random? | Yes |
+| Q4 | Pass marks for Phase 6: win rate above 50% against both, with the interval's lower end above 50%? | Yes as the minimum to merge; report the real numbers whatever they are |
+| Q5 | Bridge: one Node process, JSON lines over stdin and stdout, both sides drivable from Python? | Yes. No new dependency, and it reuses the pinned simulator |
+| Q6 | Templates only in Phase 6, the LLM writer deferred to Phase 8? | Yes |
+| Q7 | `TurnReport` as described, added to `schemas/outputs.py`, with `numbers` as the single source for `allowed_numbers`? | Yes |
+| Q8 | Timeouts by a shared deadline checked between units of work, no threads or processes? | Yes. Simple, deterministic, and enough for CPU-bound stages |
+| Q9 | Build order: (a) Offence, Order and `TurnReport`; (b) policy and templates; (c) bridge and win rates; with a stop after (b) and after (c)? | Yes: two reviews, the second with the headline numbers |
+| Q10 | Advice A3 (`python -m poketrix analyze <log>`) in step (b), A4 (README results table) after step (c), A2 (GitHub Actions) as a separate small commit now? | Yes to all three, if you want CI on the repository |
+
+## Review of Order 10 (cp-05b) — 2026-10-12, reviewer
+
+**Accepted.** The rebuild was the right call, and it was measured properly:
+
+- Ladder staleness in Gens 3–4 went from 27 to 0, and all 8 named species are at 0.
+- The synthetic floor is still 0, the uncloaker targets are still met, and the tables are 0.66 MB.
+- The source is pinned to Showdown commit `942cda7` (2026-10-09).
+- The Trick same-item bug was found by the regenerated corpus and fixed with its own test.
+
+Keep `python -m poketrix.showdown.corpus` as the standing check. Re-run it before any real-play claim, because the live
+server keeps changing sets.
+
+## Review of the Task 06 proposal — decisions (2026-10-12, reviewer, for the user)
+
+Verdict: **APPROVED WITH CHANGES.** The pipeline, the deadline-based timeouts, `TurnReport.numbers` as the single
+source for `allowed_numbers`, and the fallback ladder are all good. The changes below are part of the build.
+
+| # | Decision | Ruling |
+|---|----------|--------|
+| Q1 | Score-based policy | **Yes**, with these clarifications: `d(m)` and `D(X)` are capped at 1, because overkill has no value. A share of remaining HP stays a share (a KO counts as 1, whatever HP was left). Document `trade`, `M` and `S` in the module docstring with one worked example. |
+| Q2 | Status moves (recovery, hazards, sleep/para/poison), others 0 | **Yes.** The constants are tuned **only on separate tuning seeds**, never on the evaluation seeds (see E2). Report the constants and the tuning runs. |
+| Q3 | Opponents and counts | **Yes, with paired games (E1).** Raise max-damage against random to **500 per gen**, so the two win rates against random can be compared on equal footing. |
+| Q4 | Pass marks | **Replaced by E3.** "Above 50% against random" is too low a bar to mean anything. |
+| Q5 | Bridge | **Yes**, plus R15 below. |
+| Q6 | Templates only, no LLM in Phase 6 | **Yes.** |
+| Q7 | `TurnReport` in `schemas/outputs.py` | **Yes.** |
+| Q8 | Shared deadline, no threads | **Yes.** |
+| Q9 | Build (a), then (b), then (c); stop after (b) and after (c) | **Yes.** |
+| Q10 | A3 in (b), A4 after (c), A2 now | **Yes to all three.** A2 only adds a workflow file under `.github/workflows/`. It changes no repository setting, and no secrets are involved. |
+
+### Evaluation design (E1–E3) — replaces Q4
+
+- **E1: paired games.** Team luck dominates Random Battles. For every seed, play the game **twice with the teams
+  swapped**: the policy gets team A, then team B. Score each pair. That cancels most of the team luck, so
+  500 pairs per gen tell us much more than 500 single games. The report gives the win rate over games,
+  plus "pairs won 2–0 / split / lost 0–2".
+- **E2: separate seeds.** Use one seed range for tuning (the Q2 constants, any thresholds) and a different, fixed range for
+  the reported evaluation. Write both ranges in the tracker before running, so the evaluation can't be tuned to.
+- **E3: pass marks for `cp-06`.**
+  1. **Against max-damage, the real test:** pooled over the four gens (2,000 pairs), the 95% Wilson lower
+     bound of the game win rate is **above 50%**, and no single gen's point estimate is below 45%.
+  2. **Against random:** the policy's win rate is **not lower** than max-damage's own win rate against random. The
+     policy's interval lower bound must be at or above max-damage's point estimate, per gen.
+  3. **Health:** 0 illegal choices, `error` in 0 decisions, `timeout` in under 1% of decisions, and p95 latency under 250 ms.
+  If any mark is missed, **stop and report.** No tuning on the evaluation seeds to get past it.
+
+### New finding R15: a failed switch while trapped is probably free in Showdown
+
+`maybeTrapped` means the switch might be refused. In Showdown's protocol a refused switch normally comes back as
+`|error|[Unavailable choice]` followed by a **new request with `trapped: true`**, and the player simply chooses
+again without losing the turn. **Verify this in the pinned simulator's source** (Gens 1–4) before building. If it holds:
+
+- The policy does **not** discount switches by `t`. The text still mentions the trapping risk. Simplify the R14 rule to this.
+- The bridge and the player must handle that re-request. These refusals are **legitimate**, are counted separately as
+  "trap re-asks", and are **not** counted as illegal choices.
+
+If it doesn't hold in some generation, keep the `t` discount for that generation only, and say so.
+
+### Smaller notes
+
+- `trade(m)` assumes they stay in. When they switch (`p_switch`), our hit lands on an unknown Pokémon. That's fine for v0,
+  but list it under Known limits.
+- `M(active)` uses the HP before the exchange. That's an accepted approximation; note it in the docstring.
+- Gen 1: a trapping move (Wrap, Bind) can stop the target from acting. v0 ignores that. Note it, and don't model it.
+
+## [Completed] Orders for Claude Code, batch 6 (Order 13 is carried into batch 7)
+
+### ✅ DONE — Order 12: Phase 6 build, steps (a) and (b). **STOP after (b)** for review. _(→ 8f6109f, 1b4e19b; approved 2026-10-13)_
+Branch: `task/06-orchestrator`.
+0. **A2 first,** as its own small commit: a GitHub Actions workflow that installs, runs `ruff`, then runs `pytest -m "not timing"`
+   on Python 3.10 and 3.12, on push and on pull requests. Check that it runs green on the pushed branch.
+1. **Check R15** in the simulator source, and record what you find (file and line, per gen) in this tracker.
+2. **(a):** the Offence and Order stages, the `TurnReport` schema with `numbers`, the stage runner with `Deadline`, and the fallback
+   ladder. Test every fallback path (R5 unsupported, R11 transformed, a timeout part-way through a stage, a missing posterior).
+3. **(b):** the policy (Q1 with the clarifications, R15 outcome, Q2 with *provisional* constants), templates behind `Writer`,
+   the guardrail wiring, and A3 (`python -m poketrix analyze <log> [--turn N]`). Tests:
+   - hand-built positions where the right choice is obvious: a KO available, about to be KO'd with a safe switch, a forced switch, trapped;
+   - the "every number in the text is a cited, rounded number" test;
+   - replaying a player-mode fixture produces a legal recommendation at every decision;
+   - latency p50 and p95 per stage on the corpus sample (timing marker).
+4. Write it up in this tracker: what was built, the latency table, and three example outputs of `analyze` on real turns. Then **stop**.
+
+**Result (2026-10-13): steps (a) and (b) built, awaiting review.** 870 passed in the default run
+(847 + 23 new); `ruff` clean. Nothing is merged. **Two findings (F1, F2) need a decision before
+Order 13.**
+
+#### 0. CI (A2) and R15
+
+- A2 applied in `8f6109f`: `.github/workflows/tests.yml` runs `ruff` and
+  `pytest -m "not timing"` on Python 3.10 and 3.12, on push and pull requests. The first run on
+  `task/06-orchestrator` was green.
+- **R15 holds in every generation.** `sim/side.ts` (commit `942cda7`), `chooseSwitch`, lines
+  984–997: a switch chosen while `pokemon.trapped` goes to `emitChoiceError` (lines 527–537),
+  which sends `|error|[Unavailable choice] Can't switch: The active Pokémon is trapped`, sets
+  `trapped: true` in the request and sends that request again. The turn is not spent. The Gen 1–4
+  mods do not override it. `maybeTrapped` is set by Shadow Tag, Arena Trap and Magnet Pull
+  (`data/abilities.ts` 197–207, 2518–2527, 4158–4167; Gen 3 versions in
+  `data/mods/gen3/abilities.ts`), so it only arises in Gens 3–4. **Outcome:** the policy does
+  not lower a switch's score for the trapping risk; the text states it.
+
+#### 1. What was built
+
+| Part | Where | What it does |
+|------|-------|--------------|
+| Contracts | `schemas/outputs.py` | `TurnReport` with each stage's `SubsystemResult`, the scored options and `numbers`; `MoveOutlook`, `OptionScore`, `Decision` and the stage payloads |
+| Maths added | `calc/order.py`, `calc/report.py` | `acts_first_chance` (priority, then each generation's own Speed rule, Trick Room) and `expected_hp_share` (capped at the HP that is left) |
+| Threat report | `uncloak/threat.py` | New `expected_best_share`: the D of the formula, computed per set like `p_ko_best_move` |
+| Stages 1–5 | `advisor/stages.py` | Uncloak, threats, offence, order, opponent heuristic-0. Each checks its deadline between units of work and records its numbers |
+| Policy | `advisor/policy.py` | The Q1 score, with the formula and a worked example in the docstring; hazards exact; R14 risk from the ability posterior; provisional Q2 constants |
+| Writer | `advisor/writer.py` | `Writer` protocol and `TemplateWriter`. A sentence appears only when its numbers exist |
+| Runner | `advisor/pipeline.py` | `TurnAdvisor.advise(snapshot) -> TurnReport`: the stage table, `Deadline`, the fallback ladder, the guardrail check |
+| A3 | `python -m poketrix analyze <log> [--turn N]` | Prints the state, their likely sets, their threats, our scored options and the advice |
+| Latency tool | `python -m poketrix.advisor.latency [dir] [n]` | The table below |
+
+Fallback paths, each with a test: R5 (an unsupported move stays unscored, never 0; a lower bound
+is said in the text), R11 (transformed: `fallback`, no damage numbers, highest-power legal move),
+a stage timing out part-way (keeps what it finished), a whole turn out of time, no posterior,
+their Pokémon fainted, a single legal action.
+
+Provisional Q2 constants (to be tuned on the tuning seeds only): recovery = the HP restored as a
+share of the HP left (Rest × 0.5); a hazard not yet up = 0.06 per benched opponent; sleep 0.60,
+paralysis 0.30, Toxic 0.30, poison 0.15, each × accuracy.
+
+#### 2. Latency
+
+2,000 decisions per generation sampled from the 500-battle corpus (seed 20261301). The laptop was
+on battery at about 10% load, so not the AC-power run.
+
+| Gen | Total p50 | Total p95 | Max | Threats p50 / p95 | Offence p50 / p95 | Other stages p95 | Decisions not `ok` |
+|-----|-----------|-----------|-----|-------------------|-------------------|------------------|--------------------|
+| 1 | 13.6 ms | 38.8 ms | 131 ms | 7.0 / 22.3 | 4.8 / 14.6 | each under 1.5 | 59 `fallback` |
+| 2 | 9.4 ms | 26.7 ms | 179 ms | 4.7 / 16.2 | 3.2 / 9.3 | each under 1.5 | 47 `fallback` |
+| 3 | 8.9 ms | 31.9 ms | 173 ms | 4.4 / 18.4 | 3.2 / 11.2 | each under 1.5 | 26 `fallback` |
+| 4 | 9.1 ms | 30.9 ms | 176 ms | 4.4 / 18.2 | 3.3 / 11.9 | each under 1.5 | 45 `fallback` |
+
+p95 is 6 to 9 times under the 250 ms target; no `timeout` and no `error` in 8,000 decisions. The
+`fallback` decisions are transformed Pokémon, a fainted target, and evidence outside the prior.
+`pytest -m timing`: the 4 new tests pass; of the 8 older ones, the Gen 1 and Gen 2 calculator
+tests missed their 8 ms limit on battery (8.5 and 8.8 ms) and the other 6 passed.
+
+#### 3. Three real turns (`analyze`, fixture battle 0)
+
+**Gen 4, turn 9: a knock-out is taken.**
+```
+ours:   Pinsir L84     theirs: Ho-Oh L72
+  +1.377  stoneedge      removes 80%, knock-out 80%
+  +0.641  closecombat    removes 30%, knock-out 0%
+  +0.109  switch to Zapdos   takes 38%, knocked out 0%
+Stone Edge: 80% to knock out Ho-Oh
+Stone Edge removes about 80% of Ho-Oh's remaining HP on average and knocks it out 80% of the
+time. Pinsir acts first 100% of the time. If Ho-Oh attacks, it takes about 82% of Pinsir's
+remaining HP and knocks it out 6% of the time.
+```
+
+**Gen 3, turn 6: the best trade.**
+```
+ours:   Hitmontop L87 71%     theirs: Primeape L84 41% def+1
+  +0.399  hiddenpowerghost   removes 68%, knock-out 6%
+  +0.378  switch to Zapdos   takes 36%, knocked out 2%
+Hidden Power Ghost: about 68% of Primeape's remaining HP
+Hidden Power Ghost removes about 68% ... Hitmontop acts first 0% of the time. If Primeape
+attacks, it takes about 51% of Hitmontop's remaining HP and knocks it out 10% of the time.
+```
+
+**Gen 4, turn 2: a switch that I think is wrong (finding F1).**
+```
+ours:   Porygon-Z L79 64% spa+2     theirs: Qwilfish L83 100%
+  +0.845  switch to Golduck   takes 46%, knocked out 29%
+  +0.718  triattack           removes 100%, knock-out 100%
+Switch to Golduck: Porygon-Z is knocked out 33% of the time if it stays
+```
+
+#### 4. Findings that need a decision before Order 13
+
+| # | Finding | Evidence | Recommendation |
+|---|---------|----------|----------------|
+| F1 | **The approved score gives up certain knock-outs for a switch.** A knock-out now and a knock-out next turn by the switch-in are worth the same, and staying is charged a second exchange against a Pokémon that will already be gone (`M(active)`) | On the 8 fixture battles the engine advises a voluntary switch in 114 of 337 decisions (34%), and in 16 of them a move with a 90% or higher knock-out chance was available. The turn above: Tri Attack knocks out 100% of the time and scores 0.718; the switch scores 0.845 | Two changes to the formula, both still closed-form: (1) the second exchange counts only if their Pokémon is still there, `P(both alive)·M(active)`; (2) a tempo factor γ on every second-exchange term (start at 0.5, tune on the tuning seeds). I did not make them: they change the approved Q1 formula |
+| F2 | **A move's cost to ourselves is not scored.** Explosion and Self-Destruct count as a free knock-out; recoil and Hyper Beam's recharge turn cost nothing | Gen 2 fixture battle, turns 3–7: "Explosion: 100% to knock out Piloswine" at every decision | Charge a self-KO move the HP share it gives up (1.0), in `trade`. Leave recoil and recharge for later and list them under known limits |
+| F3 | The opponent heuristic makes `a` small against sets full of status moves (0.19 in the turn above), so taking a hit looks nearly free | Same turn: half of Qwilfish's likely moves are hazards or status | Leave it for Order 13: `a` is one of the placeholders, and F1's fix removes most of its effect. Report its effect in the tuning runs |
+
+Other notes: the order stage takes their move to have no priority (known limit); a switch-in's
+status moves are not judged; `maybeTrapped` itself is still not in the request schema, so the
+risk comes from the posterior alone.
+
+Deviations from the proposal, small: `TurnReport` holds the `SubsystemResult` of each stage as
+typed fields (`uncloak`, `threats`, `offence`, `order`, `opponent`, `policy`) rather than a list;
+a stage with nothing to work on (R11, a fainted target, no posterior) returns `fallback` with an
+empty payload and the reason, not `error`; the writer receives a `Brief` (decision, numbers,
+caveats), because a `TurnReport` cannot exist before its recommendation.
+
+### ⤷ MOVED — Order 13: see batch 7 (its text there replaces this one)
+1. The bridge (Q5 + R15), the two players, paired games (E1), and the seed ranges written here first (E2).
+2. Tune the Q2 constants on the tuning seeds only, and report them.
+3. Run the evaluation: policy against max-damage and policy against random, 500 pairs per gen each, plus max-damage against random, 500 per gen.
+4. Report per gen and pooled: win rates with Wilson intervals, pair outcomes, average turns, fallback, timeout and error shares,
+   trap re-asks, and latency p50 and p95. Then the E3 verdict.
+5. If E3 passes: A4 (a README results table), then **stop** for review before the `cp-06` merge. If it fails: **stop** and report, with no
+   tuning on the evaluation seeds.
+
+## Review of Order 12 (2026-10-13, reviewer, for the user)
+
+Verdict: **APPROVED**, with the score fixes below to be made before the win-rate run.
+
+What's good:
+
+- **R15 settled from the source.** `sim/side.ts` `chooseSwitch` re-asks a trapped switch with `trapped: true`, and no turn is
+  spent. Switches are not discounted for trapping; the text still states the risk. Correct.
+- **Latency:** p95 is 27–39 ms per gen, with 0 timeouts and 0 errors in 8,000 decisions (measured on battery). That's far inside 250 ms.
+- **Fallback ladder:** every path has a test. `numbers` → `allowed_numbers` is wired up, and CI is green.
+- **The three deviations** (typed stage fields on `TurnReport`, `fallback` with a reason rather than `error`, the `Brief` handed
+  to the writer): **all accepted.** Each is cleaner than what was proposed.
+- **Raising F1–F3 instead of patching them quietly was exactly right.** The `analyze` output made the flaw visible, which
+  is what it's for.
+
+### Decisions on F1–F3
+
+| # | Ruling |
+|---|--------|
+| F1 | **Accepted, both parts.** (1) The second exchange counts only if both Pokémon are still in: staying = `trade(m) + γ·P(we survive)·(1 − P(we KO))·M(active)`. (2) Tempo factor `γ` on **every** second-exchange term, on the stay side *and* the switch side, so the two stay comparable: switching = `−a·D(X) − hazard(X) + γ·P(X survives)·M(X)`. Start at γ = 0.5. Tune it on the tuning seeds from the grid {0.3, 0.5, 0.7, 1.0} only. Update the docstring formula and its worked example. |
+| F2 | **Accepted, generalised.** Any move whose user faints (Showdown's `selfdestruct` flag: Explosion, Self-Destruct, Memento, Healing Wish, Lunar Dance where they exist) is charged `1.0` (its own remaining HP) in `trade`, and its stay value has `P(we survive) = 0`. Recoil is **optional (A7):** the calculator already has absolute damage, so recoil's share of our HP = `recoil_fraction × expected_absolute_damage / our_remaining_hp`, capped at 1. Add it if it takes under an hour; otherwise it goes under known limits with the Hyper Beam recharge. |
+| F3 | **Deferred to Order 13, as recommended,** but as a *tuned* knob: add `a_floor` (the opponent's attack probability is at least this value), tuned on the tuning seeds from {0, 0.5}. Report its effect. |
+
+### Guardrail metrics. Report them on the fixtures after the fix, and again on the evaluation games
+
+- **Thrown-away KOs:** the share of decisions where the engine advises a *voluntary* switch while a move with KO ≥ 90% and
+  `f ≥ 0.9` (we move first) was legal. Target **0**. Any case left must be listed with its numbers.
+- **Voluntary switch rate:** report it before the fix (114 / 337 = 34%) and after. There's no target; it is a sanity signal.
+- **Self-KO rate:** how often a self-KO move is advised, and in what positions (it should mostly be the last Pokémon or a
+  guaranteed trade).
+
+### Timing note
+The Gen 1 and Gen 2 calculator timing tests ran at 8.5 and 8.8 ms against an 8 ms limit, **on battery**. Re-run them on AC power before
+`cp-06`. If they still fail on AC, report the medians and propose a new limit then. Don't change the limit now.
+
+## [Partly completed] Orders for Claude Code, batch 7 (Order 13 continues under batch 8's amendments)
+
+### ✅ DONE — Order 12b: the score fixes (pre-approved, no stop if the checks pass) _(→ f93bb0b; accepted 2026-10-13)_
+On `task/06-orchestrator`:
+1. Make F1 (both parts, with γ a named parameter defaulting to 0.5), F2 (the self-faint charge), and F3's `a_floor` parameter
+   (default 0). Recoil (A7) is optional.
+2. **Regression tests from the real turns:**
+   - Gen 4, fixture battle 0, turn 2: Porygon-Z must choose **Tri Attack**, not the Golduck switch.
+   - Gen 2, the Explosion turns 3–7: Explosion must no longer be advised at full value. Assert the score now includes the
+     self-faint charge, and give the expected choice.
+   - The Pinsir and Hitmontop turns must keep their current choices.
+3. Report the three guardrail metrics on the 8 fixture battles, before and after. Thrown-away KOs must be 0, or each case listed.
+4. Full suite green, `ruff` clean, CI green. Then go straight to Order 13. If a check fails, **stop** and report.
+
+**Result (2026-10-13): done.** 877 passed in the default run (870 + 7 new); `ruff` clean.
+
+- **F1, F2, `a_floor`** are in `advisor/policy.py` behind `PolicySettings` (`gamma` 0.5,
+  `a_floor` 0, `utility_scale` 1). Self-faint moves are a named set of five: the dex snapshot
+  does not carry Showdown's `selfdestruct` field. Recoil (A7) was not added; it is listed with
+  the recharge turn under known limits.
+- **One correction to the ruled F1 formula, decided by the user on 2026-10-13.** As ruled,
+  `(1 − P(we KO))·M(active)` made a knock-out *forfeit* a good matchup's value: on the fixtures
+  the engine declined a 90%+ knock-out move in 17 of 90 chances (Gen 1: Body Slam 1.228 over a
+  certain, first-moving Earthquake knock-out at 0.998). Now, after our knock-out, the second
+  exchange counts as `max(M, 0)`:
+  `stay = trade(m) + γ·P(we survive)·[(1 − k·act)·M + k·act·max(M, 0)]`.
+  A knock-out ends a bad matchup's cost and keeps a good one's value. A test asserts that a
+  knock-out never scores below the same damage without one. The 13 declined knock-outs left
+  are 6 Explosions and 7 turns where we are slower and they knock us out first if they attack.
+- **Regression tests from the real turns:** Porygon-Z now chooses Tri Attack (0.776 against
+  0.375 for the Golduck switch); Muk's Explosion scores −0.008 (`d·act − 1`) and Hidden Power
+  Ground is advised on turn 3; Pinsir keeps Stone Edge and Hitmontop keeps Hidden Power Ghost.
+
+| Guardrail, 8 fixture battles, 337 decisions | Before | After |
+|----------------------------------------------|--------|-------|
+| Voluntary switches | 114 (34%) | 68 (20%) |
+| Thrown-away knock-outs (KO ≥ 90% and first ≥ 90%) | 0 | 1 |
+| Self-KO move advised | 10 | 1 |
+
+The one thrown-away case is Explosion (Gen 3 battle 1, turn 2: knocks out 100%, acts first
+100%, the engine switches instead), so it is a refused trade, not a thrown-away knock-out; the
+test excludes self-KO moves and requires 0. "Before" is 0 by the reviewer's definition because
+the 16 cases reported under Order 12 did not all move first. The one self-KO advice left is
+Gen 3 battle 1, turn 3: Explosion at 100% with six Pokémon left on each side, where every other
+option scores below 0. `python -m poketrix.advisor.audit [dir]` prints this table.
+
+### Order 13: the bridge and the win rates (replaces the batch-6 text). **STOP with the results, before `cp-06`.**
+1. The bridge (Q5 + R15: trap re-asks counted separately), the policy and max-damage players, and paired games (E1).
+   **Write the tuning and evaluation seed ranges here before running anything** (E2).
+2. **Tune on the tuning seeds only:** γ ∈ {0.3, 0.5, 0.7, 1.0}, `a_floor` ∈ {0, 0.5}, and the Q2 constants (small steps around the
+   provisional values). Use about 100 pairs per gen against max-damage for each setting. Keep the grid to what's listed, so that
+   tuning can't overfit. Report every setting's win rate, and pick by pooled win rate.
+3. Freeze the chosen settings, then run the evaluation: policy against max-damage and policy against random, 500 pairs per gen each,
+   plus max-damage against random, 500 per gen.
+4. Report per gen and pooled:
+   - win rates with Wilson intervals, and pair outcomes (2–0, split, 0–2);
+   - average turns;
+   - the fallback, timeout and error shares, and trap re-asks;
+   - the three guardrail metrics;
+   - p50 and p95 latency (on AC power if possible).
+   Then give the **E3 verdict.**
+5. E3 passes → write A4 (the README results table), then **stop** for review before the `cp-06` merge. E3 fails → **stop** and
+   report, with no tuning on the evaluation seeds.
+
+**Plan, written on 2026-10-13 before any tuning or evaluation game was played (E2).**
+
+A game is fixed by `(generation, index)`: `play_bridge.mjs` derives both teams and the battle
+seed from base seed 20261401 and the index. A pair is the same index played twice with the two
+teams swapped. Simulator: the pinned checkout, commit `942cda7`.
+
+| Purpose | Game indices, per generation | Pairs per generation |
+|---------|------------------------------|----------------------|
+| Harness testing only (not reported) | 900,000 and up | a few |
+| **Tuning** | 1,000,000 to 1,000,099 | 100 |
+| **Evaluation** | 2,000,000 to 2,000,499 | 500 |
+
+Tuning, against max-damage only, 100 pairs per generation per setting (800 games each):
+
+1. γ ∈ {0.3, 0.5, 0.7, 1.0} × `a_floor` ∈ {0, 0.5}, with `utility_scale` 1.0: 8 settings.
+2. With the best (γ, `a_floor`): `utility_scale` ∈ {0.5, 1.5}, which moves every Q2 constant by
+   half. 2 more settings.
+
+The setting with the highest pooled win rate is frozen; a tie goes to the setting nearest the
+defaults (γ 0.5, `a_floor` 0, `utility_scale` 1). Nothing else is tried. The evaluation then
+runs once on the evaluation indices with the frozen setting.
+
+## Review of Order 12b and the mid-run report (2026-10-13, reviewer, for the user)
+
+**Order 12b: accepted.**
+- **The user's correction is right, and the reviewer's ruling was wrong.** The F1 formula as I ruled it made a knock-out
+  forfeit a good matchup's value (17 of 90 declined KOs). `stay = trade + γ·P(survive)·[(1 − k·act)·M + k·act·max(M, 0)]` is
+  the correct form. The test that "a KO never scores below the same damage without one" is the right guard, so keep it permanent.
+  The lesson for the process is that **measured behaviour beats a reviewer's formula.** The autonomy envelope below makes that the default.
+- **Guardrails:**
+  - Voluntary switches went from 34% to 20%.
+  - Thrown-away KOs are 0 by definition; the single Explosion case is a refused self-KO trade, correctly excluded.
+  - Self-KO advice went from 10 to 1, and that one is defensible (every other option scores below 0).
+- **The Gen 1 Desync Clause fix (`e2a556f`) is accepted**, with 0 false claims still on the ground-truth set. See 13-A2 about the tuning runs.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 8
+
+## Reviewer note on tuning step 1 (2026-10-13)
+
+**Claude Code's question ("raise the strict against-random pass mark first, or run as written?") is answered: amendment 13-A1
+replaces it.** Apply 13-A1…A5, then run the evaluation. Don't wait for anything else.
+
+Reading of the eight-setting table (100 pairs per gen against max-damage, tuning indices):
+
+- **The defaults lead:** γ 0.5 with no attack floor, at 77.8% pooled (74.7–80.5%). That is the best sign tuning can give, because the
+  pre-registered tie rule and the winner agree, so there is little winner's-curse risk in freezing it.
+- **The top five are within about 2 points** and inside each other's intervals, so the policy is not sensitive to γ in 0.3–0.7.
+  Only γ 1.0 is clearly worse, which confirms that F1's tempo factor matters.
+- **The attack floor (F3) never helped.** Keep `a_floor = 0`, and leave F3 to Phase 7's learned opponent model.
+- **Gen 1 is the weak spot,** at about 65% for every setting, against 74–85% elsewhere. It's insensitive to γ, so the cause is likely
+  Gen 1 mechanics the policy doesn't model, not the tuning. It is added to the Order 15 backlog as item 0 (below).
+- **13-A2 still applies.** Re-run the Gen 1 slice of the five settings that ran before `e2a556f`, then rebuild the table. Gen 1 is the
+  weakest gen, and the top five are 2 points apart, so same-code Gen 1 numbers could reorder them. If the leader is still γ 0.5 / floor
+  0, freeze it. If the order changes, apply the pre-written rule to the rebuilt table.
+- **Expectation for the evaluation:** a pass on E3.1 against max-damage is likely, given about 78% on tuning seeds, with
+  some regression to expect on fresh seeds. Report the real numbers, whatever they are.
+
+**Addition to the Order 15 backlog, item 0: Gen 1 diagnosis.** Before any new feature, take 50 lost Gen 1 *evaluation-adjacent*
+games (from the tuning range or a fresh diagnostic range; **never the evaluation range**) and tag the deciding turn of each:
+- full paralysis or freeze luck;
+- crits (high-crit moves, Speed-based crit rate);
+- partial trapping (Wrap, Bind, Fire Spin, Clamp);
+- Hyper Beam with no recharge after a KO;
+- Explosion's Defense halving;
+- status that the score undervalues (sleep);
+- a policy mistake.
+
+The tag counts decide which Gen 1 mechanic is worth modelling first.
+
+### Order 13, amendments 13-A1…A5. **Apply all of these before the first evaluation game.** Tuning may continue meanwhile.
+
+- **13-A1: replace pass mark E3.2 (against random).** As written, it needed the policy's lower bound to reach max-damage's own
+  win rate. Near the ceiling (max-damage won 21 of 24 scratch games) that demands roughly 97% or more, so it measures nearness to
+  100%, not skill. That was the reviewer's mistake. **New E3.2, non-inferiority:** per generation, the 95% interval of
+  *(policy's win rate − max-damage's win rate), both against random*, has a lower end above **−2 percentage points**. In plain
+  words: against easy opponents, the policy must not lose noticeably more often than greedy play does. Use the Newcombe/Wilson
+  interval for a difference of two proportions. E3.1 (beating max-damage head to head) remains **the** headline test, and E3.3 is unchanged.
+- **13-A2: clean tuning data.** The Gen 1 fix doesn't only touch games that crashed. It ignores a first move whenever it
+  repeats the side's last one (187 of 500 battles), so Gen 1 posteriors, and with them decisions, differed in the five settings
+  run before it. **Re-run only the Gen 1 slice (100 pairs) of those five settings** on the fixed code: about 1,000 games, roughly a seventh of
+  the tuning cost. Rebuild the eight-setting table from same-code results only, then pick by the pre-written rule. Do not
+  change the selection rule now that results are in.
+- **13-A3: quarantine instead of halting.** A new tracker bug must not kill a multi-hour run, and must not be hidden either.
+  On any exception in the harness or the tracker:
+  - save the seed, the full log and the traceback to `data/raw/quarantine/`;
+  - drop **the whole pair** from the scoring, so no partial pair biases the result;
+  - continue with the next pair.
+
+  Report the quarantine count per generation. **Health mark (added to E3.3): at most 0.5% of pairs quarantined per
+  generation.** Above that, the run is invalid. Stop, fix, and re-run that generation on its same indices. Every quarantined game
+  becomes a regression test after the run.
+- **13-A4: the burned-seed rule (only if E3 fails).** Evaluation indices 2,000,000–2,000,499 are used **once**. You may
+  analyse the evaluation games to diagnose a failure, but any change after that is version v1 and is judged on a **fresh** range
+  (3,000,000–3,000,499), written here before it runs. No re-running the old range with new code to "see if it passes now".
+- **13-A5: also report the pair-level view.** Give the mean pair score (0, 0.5 or 1 per pair) with a bootstrap 95% interval
+  (10,000 resamples, fixed seed) next to the game-level Wilson interval. Treating games as independent is conservative under pairing;
+  the pair view shows the real precision. The verdict stays on E3 as amended.
+
+Then carry on with Order 13 steps 3–5 as written, and **stop with the results** before `cp-06`.
+
+#### Order 13, checkpoint of 2026-10-13 (Claude Code): tuning finished, setting frozen, **stopped before the evaluation on a pass-mark question**
+
+No evaluation game has been played. Indices 2,000,000–2,000,499 are untouched.
+
+**Amendments applied** (`ad2fb53`, 889 tests): 13-A1 (Newcombe interval of the difference, margin −2 points, per generation),
+13-A3 (a pair that raises is quarantined to `data/raw/quarantine/`, dropped whole, counted; over 0.5% of a generation's pairs fails
+the health mark), 13-A5 (mean pair score with a bootstrap interval over pairs, 10,000 resamples, seed 20261402). Only whole pairs
+are scored. 13-A4 is a rule, not code.
+
+**13-A2 done, for all eight step-1 settings, not five.** Their Gen 1 slices (1,600 games) were replayed on the fixed code; the
+earlier Gen 1 games are kept apart in `tune/before_gen1_fix/`. **Every one of the 1,600 games had the same winner as before**, so
+the table's Gen 1 column and the order did not change: the fix alters evidence in rare positions, and none of them changed a
+decision on these seeds. No pair was quarantined.
+
+**Final tuning table** (tuning indices, 100 pairs per generation, against max-damage, same code throughout):
+
+| γ | `a_floor` | `utility_scale` | Gen 1 | Gen 2 | Gen 3 | Gen 4 | Pooled | 95% interval |
+|---|-----------|-----------------|-------|-------|-------|-------|--------|--------------|
+| **0.5** | **0** | **1.5** | 65.0% | 81.5% | 82.0% | 85.0% | **78.4%** | 75.4% to 81.1% |
+| 0.5 | 0 | 1.0 | 66.5% | 80.5% | 79.5% | 84.5% | 77.8% | 74.7% to 80.5% |
+| 0.7 | 0 | 1.0 | 66.5% | 79.0% | 80.0% | 81.5% | 76.8% | 73.7% to 79.5% |
+| 0.3 | 0.5 | 1.0 | 65.5% | 79.5% | 76.0% | 83.5% | 76.1% | 73.1% to 78.9% |
+| 0.5 | 0.5 | 1.0 | 65.0% | 79.0% | 78.0% | 82.5% | 76.1% | 73.1% to 78.9% |
+| 0.3 | 0 | 1.0 | 65.5% | 78.5% | 78.0% | 81.5% | 75.9% | 72.8% to 78.7% |
+| 0.7 | 0.5 | 1.0 | 66.5% | 77.0% | 76.5% | 79.5% | 74.9% | 71.8% to 77.8% |
+| 0.5 | 0 | 0.5 | 61.0% | 75.0% | 77.0% | 79.5% | 73.1% | 69.9% to 76.1% |
+| 1.0 | 0 | 1.0 | 63.0% | 77.0% | 77.0% | 74.0% | 72.8% | 69.6% to 75.7% |
+| 1.0 | 0.5 | 1.0 | 61.0% | 73.0% | 76.5% | 75.0% | 71.4% | 68.1% to 74.4% |
+
+No illegal choice and no thrown-away knock-out in any of the 8,000 games.
+
+**Frozen setting, by the pre-written rule (highest pooled win rate): γ 0.5, `a_floor` 0, `utility_scale` 1.5.** It leads the
+defaults by 5 games in 800 (78.4% against 77.8%), well inside the noise, so some of that lead is luck; the rule was written before
+the results and is applied as written. Halving the status-move values (0.5) is clearly worse, so status moves earn their place.
+
+**Why I stopped: the amended mark E3.2 is close to a coin flip in Gen 1, whatever the policy does.** To see where the rates sit I
+played the two against-random matches on the *tuning* indices with the frozen setting (a dry run: nothing was tuned on it):
+
+| Gen | Policy against random | Max-damage against random | Difference | Interval at 200 games each |
+|-----|-----------------------|---------------------------|------------|-----------------------------|
+| 1 | 88.5% | 87.5% | +1.0 | −5.5 to +7.5 |
+| 2 | 94.0% | 91.5% | +2.5 | −2.7 to +7.8 |
+| 3 | 94.5% | 86.0% | +8.5 | +2.7 to +14.5 |
+| 4 | 96.5% | 88.0% | +8.5 | +3.3 to +14.0 |
+
+At the evaluation's size (1,000 games per player per generation) and rates near 88%, the Newcombe interval reaches about 2.9
+points each way. A lower end above −2 therefore needs an observed lead of about **+0.9 points or more**. If the true Gen 1 lead is
+about +1, as the dry run suggests, Gen 1 passes roughly half the time by chance alone, and two policies that are exactly level
+would fail it most of the time. That is the same flaw 13-A1 set out to remove, in a milder form: the mark tests the sample size,
+not the policy. And the evaluation indices can be used only once (13-A4).
+
+Everything else in the dry run would pass: against max-damage 78.4% pooled, 0 illegal, 0 errors, 0 timeouts in 53,020
+decisions, p95 26 ms, 0 quarantined pairs.
+
+**Decision needed (a pass mark, so outside the autonomy envelope). Options, with my recommendation first:**
+
+| # | Option | Effect |
+|---|--------|--------|
+| P1 (recommended) | Judge E3.2 **pooled** over the four generations at the −2-point margin (4,000 games each: the interval is about 1.4 points each way, so level policies pass), and per generation only require the lower end above **−5 points** | The mark can tell "level" from "clearly behind"; a generation that is really 5 points worse still fails |
+| P2 | Keep the per-generation −2 margin and play the two against-random matches with **2,000 pairs** per generation (indices 2,000,000–2,001,999 for those two matches only) | Interval about 2 points each way; level policies still fail about half the time, so this alone does not fix it |
+| P3 | Run it as amended | Gen 1, and possibly Gen 2, pass or fail largely by chance; a fail burns the evaluation range |
+
+After the ruling: one command per match runs the evaluation (about 12,000 games, under two hours), then the report and verdict.
+
+#### Reviewer ruling 13-A6 on E3.2 (2026-10-13): **P1 adopted.** Run the evaluation.
+
+**The arithmetic is confirmed.** At about 88% and 1,000 games per player, the Newcombe half-width is ±2.85 points per generation, so the
+per-generation −2 margin needs an observed lead of about +0.9 points. That makes it a coin flip for a policy that is truly about +1 ahead.
+Pooled over four gens (4,000 games each), the half-width is about ±1.3 points. Stopping to ask was right: this is the second
+pass-mark flaw that measurement caught before the seeds were spent. For future pass marks, the reviewer will do the
+power check *before* writing the mark.
+
+**The final E3.2 (replaces 13-A1's per-generation form):**
+- **Pooled:** the policy's win rate against random minus max-damage's win rate against random, with each generation weighted equally
+  (equal n). The 95% Newcombe interval must have a lower end **above −2 points**.
+- **Per generation (a safety net):** each generation's interval must have a lower end **above −5 points**, so a clearly worse
+  generation still fails. At ±2.85 (standard error about 1.45 points) the cut is an observed lead below −2.15. A truly level generation passes about 93% of the time; one truly +1 ahead (the Gen 1 dry run) passes about 98.5%; one truly 5 points behind fails about 97.5% of the time.
+- **Supplementary only, not part of the verdict:** if the two against-random matches use the same game indices (same teams, same battle
+  seed), also report a paired analysis by index (discordant counts and the paired difference interval). It shows the real precision,
+  but the verdict uses the pre-registered unpaired rule above.
+
+E3.1 (head to head against max-damage: pooled lower bound above 50%, no gen below 45%) and E3.3 (health, including the
+0.5% quarantine mark) are unchanged. 13-A4 (burned seeds) still applies.
+
+**Other points from the checkpoint:**
+- **13-A2:** done for all eight settings, and 1,600 of 1,600 Gen 1 games had the same winner. The tuning table is clean.
+- **The frozen setting** is `utility_scale` 1.5, chosen by the pre-written rule. It leads the defaults by only 5 games in 800, which is noise.
+  It's correct to apply the rule as written. 1.5 sits at the edge of the grid, so **don't** extend tuning now. Note "`utility_scale` > 1.5 untested" in
+  the v1 backlog.
+- **The dry-run numbers were on tuning indices,** so they are not evidence for the verdict. Don't quote them as results.
+
+**Go:** run the evaluation on indices 2,000,000–2,000,499 with the frozen setting, then report per Order 13 step 4 with the E3 verdict
+under 13-A6, and **stop** before `cp-06`.
+
+### ⤷ SUPERSEDED by batch 9 (14-lite) — Order 14: hygiene after `cp-06` is approved
+
+1. **Repository location (the user does this, with Claude Code checking):** close VS Code, move the repository from OneDrive to
+   `C:\dev\Poketrix`, and reopen it. The git remote is unaffected. Claude Code then confirms that `git status` is clean and `pytest` is green.
+2. **Timing on AC power** from the new location. If the Gen 1 and Gen 2 calculator tests still miss 8 ms, report the medians
+   and propose a limit. Don't change the limit without approval.
+3. **Archive the logbook** (approved exception to "avoid new documentation", because it is a move, not new content). Move the full
+   write-ups of Phases 0–6 and the completed orders into `docs/history/phases-0-6.md`, unchanged. Keep this file to:
+   - status at a glance and current orders;
+   - a one-table **decision index** (id → one line → link to the history anchor);
+   - the active orders, the advice section and the standing rules.
+
+   Target: under 400 lines. `CLAUDE.md` points to both files.
+4. **A8: a golden-decision replay test in CI.** Commit 2–3 full game transcripts per gen (both sides' streams with requests)
+   and the policy's recorded choices. A pure-Python test replays them through the tracker and the advisor and asserts that the decisions are identical.
+   This puts the whole decision pipeline under CI without Node or the simulator. Re-record only when the policy deliberately changes, and note it here.
+5. **Dex field:** add Showdown's `selfdestruct` flag to the dex snapshot, and replace the hard-coded five-move list with it, without
+   any behaviour change (the A8 test proves it).
+6. **Gen 1 desync, exact detection:** check whether the pinned simulator's protocol marks a Desync Clause substitution
+   (a `-message`, a `-hint` or a tag). If it does, use exact detection and stop ignoring the 187 first moves. Re-run the ground-truth
+   check (it must stay at 0 false claims). If it doesn't, keep the conservative rule and record why.
+
+### ⤷ SUPERSEDED by batch 9 — Order 15: Phase 7 design proposal, plus the v1 policy backlog
+
+Phase 7 replaces `heuristic-0` with a learned opponent-action model (XGBoost) trained on real replay decisions.
+Propose the following:
+- **Data:** per-decision snapshots from the 2,000 real replays (plus more, if useful, with a polite download), keyed by
+  `(battle, turn, decision_index)`. The label is attack, switch or status/utility. Features come only from information visible
+  at that moment. Split by battle, never by turn, so nothing leaks between train and test.
+- **Metrics against heuristic-0:** log-loss, Brier score and calibration, plus the **downstream** effect: the policy's
+  win rate against max-damage with the learned model in place of heuristic-0, on a fresh evaluation range.
+- **The v1 policy backlog**, each item to be judged on that fresh range:
+  1. **Opponent priority in move order:** P(their best move has priority), from the posterior (Gen 4: Sucker Punch,
+     ExtremeSpeed, Aqua Jet, Ice Shard, Bullet Punch, Mach Punch; in all gens: Quick Attack).
+  2. Recoil and Hyper Beam's recharge cost.
+  3. Set-up moves.
+  4. A second, independent baseline that doesn't use our estimator, so "beats max-damage" isn't only measured against ourselves.
+- **Human-play proxy:** agreement between our advice and the winning player's actual choices in real replays. It is cheap,
+  it uses no new data, and it is the first signal about play against people.
+
+## Reviewer ruling 13-A7 (2026-10-14): the Phase 6 evaluation result and health mark 3e
+
+**Verdict on the evaluation as played (11,994 games, reserved indices, frozen setting):**
+
+| Mark | Requirement | Result | |
+|------|-------------|--------|--|
+| E3.1 | Against max-damage: pooled lower bound above 50%, no gen below 45% | 77.4% (76.0–78.6); lowest gen is Gen 1 at 68.7% | **Pass** |
+| E3.2 pooled | Policy minus max-damage, both against random: lower bound above −2 points | +6.0 (+4.7 to +7.3) | **Pass** |
+| E3.2 per gen | Lower bound above −5 points | Gen 1 +0.5, Gens 2–4 +6 to +10 | **Pass** |
+| E3.3 | 0 illegal, 0 errors, timeouts under 1%, p95 under 250 ms | 0 / 0 / 0.01% / 45 ms | **Pass** |
+| E3.3, quarantine | At most 0.5% of pairs per gen | Gen 4 policy v max-damage: 3 of 500 = **0.60%** | **Missed** |
+
+The policy result is real and robust. Even counting all 6 dropped games as losses gives 79.8% in Gen 4 and 77.3% pooled. The
+regression from tuning (78.4%) to evaluation (77.4%) is about 1 point, as expected.
+
+**Ruling: S1, with a determinism safeguard.** The two orders conflicted, and that's the reviewer's drafting error. 13-R's
+"health mark missed → stop, no re-runs" did not exempt **13-A3**, which was written earlier for exactly this case ("fix, and re-run
+that generation on its same indices"). The specific, pre-registered rule governs. 13-A4 (burned seeds) still governs *policy*
+failures, and this is not one. S2 would spend Phase 7's fresh range on a tracker bug. S3 would bend a pre-registered mark after
+seeing results. Neither is acceptable.
+
+### Order 13-A7 (no stop if every check passes)
+On `task/06-orchestrator`:
+1. **Commit or stash the uncommitted golden-test work first**, so the fix lands in a clean, separate commit.
+2. **Fix the Ditto bug in the tracker:** a transformed Ditto must keep its **own** set identity. A species with only one
+   ability must not cause Ditto's set to be read as the target's. Use the 3 quarantined games as regression tests. Also look for the same
+   pattern in Gens 1–3 (Ditto exists from Gen 1, and Mew can Transform), and test it. The ground-truth validation must stay at 0 false claims.
+   This is a tracker fix inside the autonomy envelope. The **policy is unchanged.**
+3. **Re-run only Gen 4, policy v max-damage, on indices 2,000,000–2,000,499,** with the frozen setting.
+4. **Determinism check, required:** the 497 pairs that were *not* quarantined must reproduce **exactly** the same outcomes, winner by winner,
+   as the first run. That proves the fix touched only the broken games, and that the re-run can't have changed the
+   result in any other way. If even one non-quarantined pair differs: **stop** and report.
+5. Re-judge 3e for that cell. If quarantine is at most 0.5% (it is expected to be 0), the full E3 verdict is **PASS**. Then follow
+   13-R's pass path: A4 README table → record the golden games → green `pytest` → merge `--no-ff` → tag `cp-06` → push → log.
+6. **Tell the user you are idle** so they can move the repository, then continue with 14-lite and Phase 7 as written.
+
+#### Order 13-A7 result (2026-10-14): **E3 PASSES. `cp-06` merged and tagged.**
+
+| Step | Result |
+|------|--------|
+| Fix (`e8c6ac0`) | While a Pokémon is transformed, a `-formechange` line is the copy's look and no longer changes its species. Tested for Arceus and Giratina (Gen 4) and Deoxys (Gen 3); a real forme change (Castform) still works. Gens 1–2 have no forme-change lines. The three quarantined games are a fixture (`tests/fixtures/quarantined_games.json.gz`) and now read through from both players' logs. Ground truth: still 0 false claims on 2,000 battles |
+| Re-run | Gen 4, policy v max-damage, indices 2,000,000–2,000,499, frozen setting, into its own file; the first run's file is untouched |
+| **Determinism check** | **994 of 994 games of the 497 untouched pairs are identical: same winner, same number of turns, same number of decisions** |
+| The three pairs | 2000063: won 1 of 2; 2000252: won 2; 2000350: won 2 |
+| Quarantine | 0 pairs in every generation and match |
+
+Final figures, with Gen 4 of policy v max-damage from the re-run and everything else as first played:
+
+| Match | Gen 1 | Gen 2 | Gen 3 | Gen 4 | Pooled | 95% interval |
+|-------|-------|-------|-------|-------|--------|--------------|
+| Policy v max-damage | 68.7% | 79.5% | 81.0% | 80.3% (803 of 1,000) | **77.4%** (3,095 of 4,000) | 76.1–78.6% |
+| Policy v random | 84.7% | 95.2% | 97.3% | 96.6% | 93.5% | 92.6–94.2% |
+| Max-damage v random | 84.2% | 88.9% | 89.9% | 86.8% | 87.5% | 86.4–88.4% |
+
+All E3 marks pass: 1a (lower bound 76.1%), 1b (lowest generation 68.7%), 2a (+6.0, interval +4.7 to +7.3), 2b (all four), 3a
+(0 illegal), 3b (0 errors in 259,873 decisions), 3c (28 timeouts), 3d (p95 45 ms), 3e (0 quarantined). The report is saved at
+`%LOCALAPPDATA%\poketrix-cache\arena\eval_report_final.txt`.
+
+Pass path carried out:
+- **A4:** the README has the results table and the headline sentence, with what the result does and does not show.
+- **The evaluated setting is now the code's default** (`PolicySettings.utility_scale` 1.5; γ and `a_floor` were already the
+  defaults), so what ships is what was measured.
+- **A8 (Order 14-lite), done here because 13-A7 asks for it:** `tests/fixtures/golden_decisions.json.gz` holds two games per
+  generation (policy against max-damage, both sides' streams, 519 decisions, 48 KB). `tests/test_golden_decisions.py` replays them
+  in plain Python and requires every choice of both players to come out as recorded. Re-record with
+  `python -m poketrix.arena record`, only when the policy changes on purpose. The harness's line handling moved into
+  `read_chunk`, shared by live play and the replay.
+- 910 tests pass; `ruff` clean; merged `--no-ff`, tagged `cp-06`, pushed.
+
+### Notes for v2 (no action now)
+- **Self-destruct advice:** about 1 per 12 games, and about half of those with a KO chance under 50%. Audit it in v2, and consider requiring a
+  KO chance threshold or "last Pokémon" for self-faint moves.
+- **Gen 1** is the weakest generation (68.7% against max-damage, about level against random). The Gen 1 diagnosis stays v2 item 0.
+
+## ▶ ACTIVE — Orders for Claude Code, batch 9 (written 2026-10-14 while the evaluation runs)
+
+Context: the user wants a demonstrable v1 by **2026-10-16**. To avoid waiting on reviews, the designs below are **decided in
+advance**. Claude Code builds directly and stops only where marked, or when something contradicts these specs (as with F1). The
+autonomy envelope still applies.
+
+### Order 13-R: what to do when the evaluation finishes
+Write the full report into this file first (per Order 13 step 4, with the E3 verdict under 13-A6). Then:
+
+- **PASS** (E3.1, E3.2 and E3.3 all met, 0 illegal choices, quarantine ≤ 0.5% per gen, nothing anomalous):
+  1. Write A4 (the README results table: the three match-ups per gen and pooled, with intervals, plus the headline sentence).
+  2. Merge `--no-ff` to `main`, tag `cp-06`, push, and log it. **Pre-approved. No stop.**
+  3. Update the explainer facts in the README only. The reviewer updates the claude.ai docs.
+  4. Continue with Order 14-lite.
+- **FAIL, or anything anomalous** (an unexplained result, a health mark missed, a quarantine spike): **stop** and report. No
+  changes, no re-runs. 13-A4 applies: the evaluation range is used up.
+
+#### Order 13-R result (2026-10-14): **every win-rate mark passes; E3 fails on one health mark (3e). Stopped. Nothing changed, nothing re-run.**
+
+The one evaluation run: indices 2,000,000–2,000,499, frozen setting (γ 0.5, `a_floor` 0, `utility_scale` 1.5), code at `8ba9888`,
+simulator commit `942cda7`, 11,994 games scored. The full report is saved at `%LOCALAPPDATA%\poketrix-cache\arena\eval_report.txt`.
+
+| Match | Gen | Games | Win rate | 95% interval (games) | Pair score (bootstrap) | Pairs 2–0 / split / 0–2 | Avg turns |
+|-------|-----|-------|----------|----------------------|------------------------|--------------------------|-----------|
+| **Policy v max-damage** | 1 | 1,000 | 68.7% | 65.8–71.5% | 66.0–71.4% | 226 / 235 / 39 | 26.1 |
+| | 2 | 1,000 | 79.5% | 76.9–81.9% | 77.0–81.9% | 314 / 167 / 19 | 46.9 |
+| | 3 | 1,000 | 81.0% | 78.5–83.3% | 78.6–83.4% | 324 / 162 / 14 | 26.6 |
+| | 4 | 994 | 80.3% | 77.7–82.6% | 77.9–82.6% | 312 / 174 / 11 | 22.4 |
+| | **all** | 3,994 | **77.4%** | **76.0–78.6%** | 76.1–78.6% | 1,176 / 738 / 83 | 30.5 |
+| Policy v random | 1 | 1,000 | 84.7% | 82.3–86.8% | 82.5–86.9% | 356 / 135 / 9 | 29.0 |
+| | 2 | 1,000 | 95.2% | 93.7–96.4% | 93.9–96.4% | 452 / 48 / 0 | 42.1 |
+| | 3 | 1,000 | 97.3% | 96.1–98.1% | 96.3–98.2% | 473 / 27 / 0 | 26.1 |
+| | 4 | 1,000 | 96.6% | 95.3–97.6% | 95.5–97.7% | 466 / 34 / 0 | 23.8 |
+| | all | 4,000 | 93.5% | 92.6–94.2% | 92.7–94.2% | 1,747 / 244 / 9 | 30.2 |
+| Max-damage v random | 1 | 1,000 | 84.2% | 81.8–86.3% | 82.0–86.3% | 349 / 144 / 7 | 23.0 |
+| | 2 | 1,000 | 88.9% | 86.8–90.7% | 86.9–90.8% | 394 / 101 / 5 | 40.5 |
+| | 3 | 1,000 | 89.9% | 87.9–91.6% | 88.1–91.7% | 401 / 97 / 2 | 27.6 |
+| | 4 | 1,000 | 86.8% | 84.6–88.8% | 84.7–88.8% | 376 / 116 / 8 | 23.3 |
+| | all | 4,000 | 87.5% | 86.4–88.4% | 86.5–88.5% | 1,520 / 458 / 22 | 28.6 |
+
+Tuning predicted 78.4% against max-damage; the fresh seeds give 77.4%. The pair-level intervals are no wider than the game-level
+ones, so the pairing did its job.
+
+| E3 mark (13-A6) | Result | Numbers |
+|-----------------|--------|---------|
+| 1a. Against max-damage, pooled lower bound above 50% | **Pass** | 3,090 of 3,994 = 77.4%, lower bound 76.0% |
+| 1b. No generation below 45% | **Pass** | lowest is Gen 1 at 68.7% |
+| 2a. Against random, pooled: not more than 2 points behind max-damage | **Pass** | 93.5% against 87.5%: +6.0 (+4.7 to +7.3) |
+| 2b. Per generation: not more than 5 points behind | **Pass**, all four | Gen 1 +0.5 (−2.7 to +3.7); Gen 2 +6.3; Gen 3 +7.4; Gen 4 +9.8 |
+| 3a. No illegal choice | **Pass** | 0 |
+| 3b. No decision ended in `error` | **Pass** | 0 of 259,697 |
+| 3c. `timeout` under 1% of decisions | **Pass** | 29 (0.01%) |
+| 3d. p95 latency under 250 ms | **Pass** | 45 ms (three matches ran side by side; the laptop was on mains for most of the run) |
+| 3e. At most 0.5% of a generation's pairs quarantined | **FAIL** | Gen 4, policy v max-damage: **3 of 500 pairs = 0.60%**. Every other generation and match: 0 |
+
+**The three quarantined pairs are one bug.** In Gen 4, Ditto transforms into a Pokémon whose species has a single ability (Arceus
+twice, Giratina once). The log then says `|-formechange|p1a: Ditto|Arceus|`, the tracker takes Ditto's species to be Arceus, and
+the snapshot carries Ditto's own set (ability Limber) under that species, which the schema rejects ("Arceus cannot have ability
+limber"). The Castform rule of `cp-05` (a forme change makes the set that forme's) is applied to a transformation, where it does not
+belong. It never appeared in the 2,000-battle ground truth, in tuning (8,000 games) or in the other 11,500 evaluation games. The
+seeds, both sides' logs and the tracebacks are in `data/raw/quarantine/` (indices 2000063, 2000252, 2000350).
+
+**Could the six dropped games change a win-rate mark? No.** Counting all six as losses: Gen 4 would be 798 of 1,000 = 79.8% and
+the pooled figure 3,090 of 4,000 = 77.3%, with a lower bound still near 76%.
+
+Guardrails on the evaluation games:
+
+| | Policy v max-damage | Policy v random |
+|---|---|---|
+| Voluntary switches (share of decisions) | 11.1% | 13.0% |
+| Thrown-away knock-outs | 0 | 0 |
+| Trap re-asks (R15), all legitimate | 36 | 43 |
+| `fallback` decisions | 2.75% | 2.51% |
+| Self-KO move advised | 319 (0.24% of decisions, 1 game in 12) | 288 (0.23%) |
+| … of which the knock-out chance was 90% or more | 154 | 99 |
+| … of which it was under 50% | 142 | 152 |
+
+The self-KO figure is worth a look in v2: about half the time Explosion is advised with a knock-out chance under 50%, which
+means every other option scored below "lose this Pokémon for some damage". It is rare, but it is not the "mostly a guaranteed
+trade" the guardrail hoped for.
+
+Supplementary, not part of the verdict: the against-random games compared game by game (same teams and seed), policy minus
+max-damage: Gen 1 +0.5 (−2.5 to +3.5), Gen 2 +6.3 (+4.0 to +8.6), Gen 3 +7.4 (+5.4 to +9.4), Gen 4 +9.8 (+7.5 to +12.1), pooled
++6.0 (+4.8 to +7.2). The policy won 437 games max-damage lost; the reverse happened 197 times.
+
+**Verdict by the letter: E3 fails, on 3e alone.** I stopped as 13-R says: no fix, no re-run, `cp-06` not tagged, README untouched.
+
+**The two orders disagree on what comes next, so this needs a ruling:**
+
+| # | Option | What it means |
+|---|--------|---------------|
+| S1 (recommended) | Follow 13-A3 as written: fix the Ditto bug with the three quarantined games as regression tests, then **re-run Gen 4 of policy v max-damage on its same indices** and judge 3e again. Nothing else is replayed | This is the remedy 13-A3 names for exactly this case. The policy is untouched; only the tracker stops rejecting a legal game. 498 of the 500 pairs should replay move for move; the three pairs get played |
+| S2 | Treat the range as burned (13-A4): fix the bug, then run the whole evaluation again on 3,000,000–3,000,499 | Cleanest, costs about an hour, and uses the range Order 15 had set aside for its downstream check |
+| S3 | Accept the result with 3e recorded as missed by 0.1 point, on the worst-case arithmetic above | No more games; the health mark is waived once, in writing |
+
+Not committed, in the working tree: the golden-decision test and its recorder (Order 14-lite A8), written while the run was
+going. They change no behaviour of the evaluated code, and they stay uncommitted until this is ruled.
+
+### Order 14-lite: hygiene that v1 needs (no stop)
+1. **The user** moves the repository out of OneDrive to `C:\dev\Poketrix` when convenient. Ask them once, then confirm a clean
+   `git status` and a green `pytest` afterwards. If they don't move it, carry on regardless.
+2. **A8, the golden-decision replay test in CI** (2 games per gen). This protects the policy during Phases 7–8, so do it now.
+3. **Deferred to v2:** logbook archiving, the dex `selfdestruct` field, exact Gen 1 desync detection, and timing on AC. Note them in the v2 list.
+
+### Order 15: Phase 7, the learned opponent-action model. **Build directly. STOP with the results.**
+Branch: `task/07-opponent-model`.
+
+**Data**
+- Source: the 2,000 real replays already downloaded. **Exclude** custom-rule or tournament games (those flagged in Order 8) and any game the parser
+  refuses. The use of more downloads is pre-authorised (polite, same script, up to +500 per gen), but only if a gen has fewer
+  than 3,000 labelled decisions after the exclusions.
+- Rows: one per **voluntary decision** per side (in spectator view both players count), from snapshots taken **before** the decision.
+  - Exclude forced switches.
+  - Exclude turns with no choice: recharge, Bide or Thrash/Outrage/Petal Dance lock, Rollout or Uproar lock, Gen 1 partial-trap lock, Sky Attack/Solar Beam/Skull Bash second turns.
+  - **Label:** `attack` (a damaging move), `utility` (a status or non-damaging move), or `switch`.
+- **Features, visible at decision time only,** computed from that side's view of its opponent, using our own engines:
+  - generation and turn;
+  - both actives' HP fractions, statuses, sums of their boosts, and alive and healthy-bench counts;
+  - our engine's quantities from the deciding side's point of view: its best KO chance and expected damage on the target, the target's
+    `p_ko_best_move` and expected damage against it, P(it moves first);
+  - hazards on its side, and whether its revealed moves include a status move;
+  - ladder rating where the replay states it (else missing).
+
+  **No future information:** a feature may only come from lines before the decision. Add a test that recomputes the features from a truncated log and gets identical values.
+- **Split by battle,** 70 / 15 / 15, stratified by gen, with seed 20261501. Nothing from a test battle is used for training or for early stopping.
+
+**Model**
+- XGBoost, multiclass (3 classes), as an **optional dependency** (`pip install -e ".[ml]"`). If it isn't installed, the stage falls back
+  to `heuristic-0` with status `fallback`.
+- Small search on the validation split only: depth ∈ {3, 5}, learning rate ∈ {0.05, 0.1}, early stopping on validation log-loss.
+  Then **isotonic or temperature calibration** fitted on validation.
+- Saved as XGBoost's JSON in `data/models/opponent-xgb-1.json`, with a manifest (data ids, split seed, features, metrics).
+  `ActionPrediction.model_version = "xgb-1"`. Inference must stay under 2 ms per decision.
+
+**Metrics, on the test split, per gen and pooled, against two baselines** (the per-gen base rates, and `heuristic-0`):
+- log-loss, Brier score, accuracy, and a 10-bin reliability table with expected calibration error (ECE);
+- a battle-level bootstrap 95% interval for the log-loss improvement (resampling battles, not rows).
+
+**Pass marks for Phase 7** (power check done by the reviewer: 15% of about 2,000 battles is about 300 test battles, roughly 10,000 decisions; with the
+battle-level bootstrap, a pooled log-loss gain of about 0.01–0.02 is detectable, while per-gen estimates are noisier, so per gen is point-estimate only):
+1. The pooled log-loss improvement over **both** baselines has a bootstrap lower bound above 0.
+2. Pooled ECE ≤ 0.03 after calibration.
+3. Per gen: log-loss is not worse than the base-rate baseline (the point estimate).
+
+**Downstream check, as a sanity check only, not the pass mark.** Our simulator opponents are bots, and a model of *humans*
+can make bot games worse even when it predicts people better. So: the policy with `xgb-1` against max-damage, 200 pairs per gen,
+on a **fresh** range 3,000,000–3,000,199, compared with `heuristic-0` on the same indices.
+- Report the paired difference.
+- Flag it (don't fail it) if the pooled lower bound is below −3 points.
+- **Write the range here before running.**
+
+**Then stop with:** the metric tables, the calibration table, the downstream result, and the 10 most important features. The reviewer
+decides whether the `xgb-1` model becomes the default.
+
+### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
+Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
+
+- **Local server:** `python -m poketrix serve`, bound to **127.0.0.1 only**. One `BattleTracker` + `TurnAdvisor` per battle room.
+  Endpoints: `POST /line` (room id + a batch of protocol lines) and `GET /advice?room=` (the latest `TurnReport`, rendered for the panel).
+  Use the standard library or one small dependency. No authentication beyond localhost, and no data persisted except an optional debug log.
+- **Browser extension (Chrome, Manifest V3):** host permissions **only** for `play.pokemonshowdown.com`,
+  `replay.pokemonshowdown.com` and `http://127.0.0.1:<port>`.
+  - A page script observes the Showdown client's incoming battle messages, including the user's own `|request|`, and forwards
+    them to the local server in arrival order.
+  - A side panel shows the headline, the top 3 scored options with their numbers, the opponent's likely set (top 2), and the threat line.
+- **Fair-play guard, enforced in code:** if the battle is rated (the protocol's `|rated|` line), the panel shows
+  "Poketrix is off in rated battles" and the server returns no advice. Advice is available in unrated games, challenges and replays.
+  State this in the README.
+- **Demo mode:** on `replay.pokemonshowdown.com`, advise from the perspective of p1 (spectator mode), so the demo needs no live game.
+- **Tests:**
+  - Server: unit tests for each endpoint, plus a replayed fixture battle posted line by line, giving the same advice as `analyze`.
+  - Extension: a manual checklist, with screenshots in the tracker.
+  - Latency from a line's arrival to the advice shown: p95 under 300 ms on the user's machine.
+- **Then stop with:** the screenshots, a short screen recording (optional), the latency numbers, and the known limits.
+
+### Order 17: v1 wrap-up (no stop)
+1. **README:** what Poketrix is, a quickstart (install, `analyze`, `serve` + loading the extension), the results tables (calculator oracle,
+   uncloaker calibration, parser ground truth, Phase 6 evaluation, Phase 7 metrics), the fair-play note, and the known limits.
+2. Tag `v1.0` on `main` once Orders 15 and 16 are approved and merged (`cp-07`, `cp-08`).
+3. **The v2 list** in this file: the Gen 1 diagnosis, priority moves, recoil and recharge, set-up moves, an independent baseline, a human trial,
+   `utility_scale` > 1.5, logbook archiving, the dex field, exact desync detection, timing on AC, and Gen 5+.
+
+## Standing rule added: the autonomy envelope (2026-10-13)
+
+So that review round trips aren't needed for routine work, Claude Code may act **without stopping** inside this envelope,
+logging each item here afterwards:
+- bug fixes in the tracker, parser or harness that come with a regression test, as long as ground truth stays at 0 false claims;
+- refactors with no behaviour change, proven by the existing tests and the golden-decision test (A8, once it exists);
+- tooling, logging, reports and documentation moves.
+
+Claude Code **must stop and ask** before changing any of these:
+- an approved formula or scoring term;
+- a schema field's meaning;
+- a pass mark or threshold;
+- the seed ranges;
+- the prior or its source;
+- anything that alters evaluation results after they are seen.
+
+When unsure, ask. And when measurement contradicts a reviewer ruling (as with F1), report it with the numbers. Don't
+follow the ruling silently.
 
 ## Advice for Claude Code (optional — apply when it fits, note it in the tracker when you do)
 

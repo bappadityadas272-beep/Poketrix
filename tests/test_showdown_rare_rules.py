@@ -5,11 +5,17 @@ fewer than 30 times in the 2,000 simulated battles (most of them never) is pinne
 rule depends on chance for its test. The line shapes are the ones the simulator's source emits.
 """
 
+import gzip
+import json
+from pathlib import Path
+
 import pytest
 from test_showdown import P1, P2, active, evidence, play
 
-from poketrix.showdown import parse_battle
+from poketrix.showdown import parse_battle, parse_line
 from poketrix.showdown.validation import load_battles
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 # --------------------------------------------------------------------------- R11: Transform
 
@@ -182,3 +188,97 @@ def test_rule_counts_are_reported_per_battle():
     record = parse_battle(load_battles(4)[0]["spectator"])
     assert record.rule_counts["item: named by a [from] tag"] > 0
     assert all(count > 0 for count in record.rule_counts.values())
+
+
+# --------------------------------------------------------------------------- Gen 1 glitches
+
+
+def test_gen1_desync_clause_move_is_not_the_pokemons_own():
+    """Found in a simulated game: Nidoran-M "used" Seismic Toss, a move its side had selected
+    for the Pokémon before it. The simulator announces the substitution with a hint."""
+    tracker = play(
+        "|move|p1a: Jigglypuff|Seismic Toss|p2a: Growlithe",
+        "|switch|p1a: Nidoran-M|Nidoran-M, L88|100/100",
+        "|turn|2",
+        "|-hint|Desync Clause Mod activated!",
+        "|-hint|In Gen 1, if both players would see the same Pokémon using different moves, ...",
+        "|move|p1a: Nidoran-M|Body Slam|p2a: Growlithe",
+        "|move|p1a: Nidoran-M|Thunderbolt|p2a: Growlithe",
+        gen=1, p1="Jigglypuff, L88", p2="Growlithe, L88",
+    )
+    assert evidence(tracker, P1, 0).revealed_moves == ["seismictoss"]
+    assert evidence(tracker, P1, 1).revealed_moves == ["thunderbolt"]  # the hint covers one move
+    assert tracker.rules["move not revealed: Gen 1 Desync Clause"] == 1
+
+
+def test_gen1_first_move_that_repeats_the_sides_last_move_reveals_nothing():
+    lines = [
+        "|move|p1a: Jigglypuff|Seismic Toss|p2a: Growlithe",
+        "|switch|p1a: Nidoran-M|Nidoran-M, L88|100/100",
+        "|turn|2",
+        "|move|p1a: Nidoran-M|Seismic Toss|p2a: Growlithe",
+        "|turn|3",
+        "|move|p1a: Nidoran-M|Seismic Toss|p2a: Growlithe",
+    ]
+    gen1 = play(*lines[:4], gen=1, p1="Jigglypuff, L88", p2="Growlithe, L88")
+    assert evidence(gen1, P1, 1).revealed_moves == []  # may be its side's carried-over choice
+    again = play(*lines, gen=1, p1="Jigglypuff, L88", p2="Growlithe, L88")
+    assert evidence(again, P1, 1).revealed_moves == ["seismictoss"]  # chosen a second time
+    later = play(*lines[:4], gen=2, p1="Jigglypuff, L88", p2="Growlithe, L88")
+    assert evidence(later, P1, 1).revealed_moves == ["seismictoss"]  # only Gen 1 has the glitch
+
+
+def test_gen1_desync_hint_after_a_failed_counter_covers_no_later_move():
+    tracker = play(
+        "|move|p1a: Chansey|Counter|p2a: Growlithe",
+        "|-hint|Desync Clause Mod activated!",
+        "|-fail|p1a: Chansey",
+        "|move|p2a: Growlithe|Body Slam|p1a: Chansey",
+        gen=1, p1="Chansey, L68", p2="Growlithe, L88",
+    )
+    assert evidence(tracker, P2).revealed_moves == ["bodyslam"]
+    assert tracker.rules["move not revealed: Gen 1 Desync Clause"] == 0
+
+
+# --------------------------------------------------------------------------- transformations
+
+
+def test_a_transformed_pokemon_keeps_its_own_species_through_a_forme_change():
+    """Found by the Phase 6 evaluation: transforming into a Pokémon with formes is announced
+    as a forme change as well, and Ditto was then taken to *be* an Arceus."""
+    for gen, target in ((4, "Arceus, L70"), (4, "Giratina, L72"), (3, "Deoxys, L80")):
+        name = target.split(",")[0]
+        tracker = play(
+            f"|move|p1a: Ditto|Transform|p2a: {name}",
+            f"|-transform|p1a: Ditto|p2a: {name}",
+            f"|-formechange|p1a: Ditto|{name}|",
+            gen=gen, p1="Ditto, L88", p2=target,
+        )
+        ditto = active(tracker, P1)
+        assert ditto.species.id == "ditto" and "transform" in ditto.volatiles
+        assert tracker.rules["forme change ignored: it is a transformation"] == 1
+        tracker.apply(parse_line("|switch|p1a: Mew|Mew, L80|100/100"))
+        assert tracker.state().sides[P1].team[0].species.id == "ditto"  # and stays so afterwards
+
+
+def test_a_real_forme_change_still_changes_the_forme():
+    tracker = play("|-formechange|p1a: Castform|Castform-Sunny|[msg]|[from] ability: Forecast",
+                   p1="Castform, L88")
+    assert active(tracker, P1).species.id == "castformsunny"
+    assert tracker.rules["forme change ignored: it is a transformation"] == 0
+
+
+def test_the_games_quarantined_in_the_phase_6_evaluation_now_read_through():
+    """Ruling 13-A7: Ditto into Arceus (twice) and Giratina, each from both players' logs."""
+    with gzip.open(FIXTURES / "quarantined_games.json.gz", "rt", encoding="utf-8") as file:
+        games = json.load(file)["games"]
+    assert [game["index"] for game in games] == [2000063, 2000252, 2000350]
+    for game in games:
+        assert "cannot have ability limber" in game["error"]
+        for log in game["logs"].values():
+            record = parse_battle(log)  # raised here before the fix
+            assert record.request_disagreements == {} and record.anomalies == ()
+            dittos = [mon for snapshot in record.snapshots
+                      for side in snapshot.state.sides.values() for mon in side.team
+                      if "transform" in mon.volatiles]
+            assert dittos and all(mon.species.id == "ditto" for mon in dittos)

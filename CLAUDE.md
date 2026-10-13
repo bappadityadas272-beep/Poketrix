@@ -45,7 +45,7 @@ Settled scope decisions (do not reopen without the user):
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-05b` merged (Phases 0–5 done, prior rebuilt); next: the Phase 6 proposal, Order 11 (2026-10-13)
+## Current state — `cp-06` merged (Phases 0–6 done; the turn engine wins 77.4% against max-damage); next: Phase 7, the opponent model, Order 15 (2026-10-14)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -58,6 +58,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-04 | `src/poketrix/uncloak/` + `data/randbats/` — set prior, Bayesian uncloaker, threat report; 731 tests total |
 | cp-05 | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 846 tests total |
 | cp-05b | Prior, held-out tables and battle fixtures rebuilt from Showdown's current source; 847 tests total |
+| cp-06 | `src/poketrix/advisor/` and `src/poketrix/arena/` — turn engine, decision policy, simulator harness, golden decisions; 910 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -164,6 +165,36 @@ Showdown parser (`from poketrix.showdown import parse_battle, BattleTracker, par
 - The player-mode ground truth needs player logs: `node build_battles.mjs 500 DIR 500` (307 MB;
   keep DIR outside OneDrive), then pass DIR to the validation.
 
+Turn engine (`from poketrix.advisor import TurnAdvisor`):
+- Evaluated once (Order 13): 77.4% of 4,000 paired games against a max-damage player, 93.5%
+  against the simulator's random player. The evaluated setting is the code's default
+  (`PolicySettings`: γ 0.5, `a_floor` 0, `utility_scale` 1.5). **Evaluation indices
+  2,000,000–2,000,499 are used up**; a changed policy is judged on a fresh range written in the
+  tracker first. A formula or setting change needs a stop.
+- **Golden decisions:** `tests/test_golden_decisions.py` replays eight recorded games and
+  requires every choice to come out as recorded. A refactor must keep it green; re-record
+  (`python -m poketrix.arena record`) only when the policy changes on purpose, and log it.
+- `poketrix.arena` (a dev tool, never imported by the runtime) plays paired games through
+  `scripts/randbats/play_bridge.mjs`; results and tuning files live in
+  `%LOCALAPPDATA%\poketrix-cache\arena`, quarantined games in `data/raw/quarantine/`.
+- `TurnAdvisor().advise(snapshot) -> TurnReport` for a player-mode snapshot (one with a request).
+  A plain state machine in `pipeline.py`: uncloak → threats → offence → order → opponent →
+  policy → write. Each stage returns a `SubsystemResult` inside its own budget
+  (`STAGE_BUDGET_MS`) and the turn's 500 ms; a `Deadline` is checked between units of work,
+  there are no threads. There is always a legal answer: the last resort is `policy.by_power`.
+- `stages.py` only joins existing layers; maths stays in `calc` (`acts_first_chance`,
+  `expected_hp_share`) and in the threat report (`expected_best_share`). The policy's formula
+  and its approximations are documented in `policy.py`'s docstring: keep them in step.
+- `TurnReport.numbers` is the only source of `allowed_numbers`. A writer may print nothing
+  else: `writer.py` quotes through `_Quotes`, and a test reads every number out of the text.
+- A stage with nothing to work on (transformed Pokémon, fainted target, no posterior) returns
+  `fallback` with an empty payload and the reason; `error` means it raised.
+- R15: a switch refused by a trapping ability is re-asked and costs no turn (`sim/side.ts`), so
+  the trapping risk is stated in the text and never scored.
+- `python -m poketrix analyze <log> [--turn N]` prints a turn; `python -m
+  poketrix.advisor.latency [dir] [n]` prints the per-stage latency table.
+- CI: `.github/workflows/tests.yml` runs `ruff` and `pytest -m "not timing"` on 3.10 and 3.12.
+
 Carried forward (from the Task 04 review):
 - R8 is decided: no probability is held back for unseen sets. The prior is rebuilt from
   Showdown's current source instead (`cp-05b`): ladder staleness on 2,000 real replays went
@@ -189,6 +220,8 @@ Known, deliberate gaps:
   whatever `-start` names (`substitute`, `confusion`, `leechseed`, `flashfire`, `slowstart`,
   `focusenergy`, `foresight`, …) plus `transform`.
 - No items/abilities tables in the dex yet (only ability ids per species). Add when Task 03 needs them.
+
+**Autonomy envelope (2026-10-13):** routine bug fixes with regression tests, behaviour-neutral refactors and tooling may proceed without a stop; changes to formulas, schemas, pass marks, seeds or the prior must stop for approval. Full rule: `docs/PROGRESS_TRACKER.md` → "Standing rule added: the autonomy envelope".
 
 ## ▶ START HERE
 
