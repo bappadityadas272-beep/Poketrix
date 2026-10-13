@@ -25,7 +25,7 @@ listed below is v2.
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 13 | One-shot evaluation (13-A6 rules) | See Order 13-R | **Running** (started 2026-10-14 00:00) |
+| 13 | One-shot evaluation (13-A6 rules) | See Order 13-R | **Stopped with the results.** Every win-rate mark passes (77.4% against max-damage); health mark 3e missed in Gen 4 (3 quarantined pairs, one Ditto bug). Needs a ruling: S1–S3 under "Order 13-R result" |
 | 13-R | Result branch: **pass** → merge `cp-06` and continue; **fail** → stop | Only on fail or anomaly | Pre-written |
 | 14-lite | Hygiene, cut to what v1 needs | No | Queued |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
@@ -2914,6 +2914,87 @@ Write the full report into this file first (per Order 13 step 4, with the E3 ver
   4. Continue with Order 14-lite.
 - **FAIL, or anything anomalous** (an unexplained result, a health mark missed, a quarantine spike): **stop** and report. No
   changes, no re-runs. 13-A4 applies: the evaluation range is used up.
+
+#### Order 13-R result (2026-10-14): **every win-rate mark passes; E3 fails on one health mark (3e). Stopped. Nothing changed, nothing re-run.**
+
+The one evaluation run: indices 2,000,000–2,000,499, frozen setting (γ 0.5, `a_floor` 0, `utility_scale` 1.5), code at `8ba9888`,
+simulator commit `942cda7`, 11,994 games scored. The full report is saved at `%LOCALAPPDATA%\poketrix-cache\arena\eval_report.txt`.
+
+| Match | Gen | Games | Win rate | 95% interval (games) | Pair score (bootstrap) | Pairs 2–0 / split / 0–2 | Avg turns |
+|-------|-----|-------|----------|----------------------|------------------------|--------------------------|-----------|
+| **Policy v max-damage** | 1 | 1,000 | 68.7% | 65.8–71.5% | 66.0–71.4% | 226 / 235 / 39 | 26.1 |
+| | 2 | 1,000 | 79.5% | 76.9–81.9% | 77.0–81.9% | 314 / 167 / 19 | 46.9 |
+| | 3 | 1,000 | 81.0% | 78.5–83.3% | 78.6–83.4% | 324 / 162 / 14 | 26.6 |
+| | 4 | 994 | 80.3% | 77.7–82.6% | 77.9–82.6% | 312 / 174 / 11 | 22.4 |
+| | **all** | 3,994 | **77.4%** | **76.0–78.6%** | 76.1–78.6% | 1,176 / 738 / 83 | 30.5 |
+| Policy v random | 1 | 1,000 | 84.7% | 82.3–86.8% | 82.5–86.9% | 356 / 135 / 9 | 29.0 |
+| | 2 | 1,000 | 95.2% | 93.7–96.4% | 93.9–96.4% | 452 / 48 / 0 | 42.1 |
+| | 3 | 1,000 | 97.3% | 96.1–98.1% | 96.3–98.2% | 473 / 27 / 0 | 26.1 |
+| | 4 | 1,000 | 96.6% | 95.3–97.6% | 95.5–97.7% | 466 / 34 / 0 | 23.8 |
+| | all | 4,000 | 93.5% | 92.6–94.2% | 92.7–94.2% | 1,747 / 244 / 9 | 30.2 |
+| Max-damage v random | 1 | 1,000 | 84.2% | 81.8–86.3% | 82.0–86.3% | 349 / 144 / 7 | 23.0 |
+| | 2 | 1,000 | 88.9% | 86.8–90.7% | 86.9–90.8% | 394 / 101 / 5 | 40.5 |
+| | 3 | 1,000 | 89.9% | 87.9–91.6% | 88.1–91.7% | 401 / 97 / 2 | 27.6 |
+| | 4 | 1,000 | 86.8% | 84.6–88.8% | 84.7–88.8% | 376 / 116 / 8 | 23.3 |
+| | all | 4,000 | 87.5% | 86.4–88.4% | 86.5–88.5% | 1,520 / 458 / 22 | 28.6 |
+
+Tuning predicted 78.4% against max-damage; the fresh seeds give 77.4%. The pair-level intervals are no wider than the game-level
+ones, so the pairing did its job.
+
+| E3 mark (13-A6) | Result | Numbers |
+|-----------------|--------|---------|
+| 1a. Against max-damage, pooled lower bound above 50% | **Pass** | 3,090 of 3,994 = 77.4%, lower bound 76.0% |
+| 1b. No generation below 45% | **Pass** | lowest is Gen 1 at 68.7% |
+| 2a. Against random, pooled: not more than 2 points behind max-damage | **Pass** | 93.5% against 87.5%: +6.0 (+4.7 to +7.3) |
+| 2b. Per generation: not more than 5 points behind | **Pass**, all four | Gen 1 +0.5 (−2.7 to +3.7); Gen 2 +6.3; Gen 3 +7.4; Gen 4 +9.8 |
+| 3a. No illegal choice | **Pass** | 0 |
+| 3b. No decision ended in `error` | **Pass** | 0 of 259,697 |
+| 3c. `timeout` under 1% of decisions | **Pass** | 29 (0.01%) |
+| 3d. p95 latency under 250 ms | **Pass** | 45 ms (three matches ran side by side; the laptop was on mains for most of the run) |
+| 3e. At most 0.5% of a generation's pairs quarantined | **FAIL** | Gen 4, policy v max-damage: **3 of 500 pairs = 0.60%**. Every other generation and match: 0 |
+
+**The three quarantined pairs are one bug.** In Gen 4, Ditto transforms into a Pokémon whose species has a single ability (Arceus
+twice, Giratina once). The log then says `|-formechange|p1a: Ditto|Arceus|`, the tracker takes Ditto's species to be Arceus, and
+the snapshot carries Ditto's own set (ability Limber) under that species, which the schema rejects ("Arceus cannot have ability
+limber"). The Castform rule of `cp-05` (a forme change makes the set that forme's) is applied to a transformation, where it does not
+belong. It never appeared in the 2,000-battle ground truth, in tuning (8,000 games) or in the other 11,500 evaluation games. The
+seeds, both sides' logs and the tracebacks are in `data/raw/quarantine/` (indices 2000063, 2000252, 2000350).
+
+**Could the six dropped games change a win-rate mark? No.** Counting all six as losses: Gen 4 would be 798 of 1,000 = 79.8% and
+the pooled figure 3,090 of 4,000 = 77.3%, with a lower bound still near 76%.
+
+Guardrails on the evaluation games:
+
+| | Policy v max-damage | Policy v random |
+|---|---|---|
+| Voluntary switches (share of decisions) | 11.1% | 13.0% |
+| Thrown-away knock-outs | 0 | 0 |
+| Trap re-asks (R15), all legitimate | 36 | 43 |
+| `fallback` decisions | 2.75% | 2.51% |
+| Self-KO move advised | 319 (0.24% of decisions, 1 game in 12) | 288 (0.23%) |
+| … of which the knock-out chance was 90% or more | 154 | 99 |
+| … of which it was under 50% | 142 | 152 |
+
+The self-KO figure is worth a look in v2: about half the time Explosion is advised with a knock-out chance under 50%, which
+means every other option scored below "lose this Pokémon for some damage". It is rare, but it is not the "mostly a guaranteed
+trade" the guardrail hoped for.
+
+Supplementary, not part of the verdict: the against-random games compared game by game (same teams and seed), policy minus
+max-damage: Gen 1 +0.5 (−2.5 to +3.5), Gen 2 +6.3 (+4.0 to +8.6), Gen 3 +7.4 (+5.4 to +9.4), Gen 4 +9.8 (+7.5 to +12.1), pooled
++6.0 (+4.8 to +7.2). The policy won 437 games max-damage lost; the reverse happened 197 times.
+
+**Verdict by the letter: E3 fails, on 3e alone.** I stopped as 13-R says: no fix, no re-run, `cp-06` not tagged, README untouched.
+
+**The two orders disagree on what comes next, so this needs a ruling:**
+
+| # | Option | What it means |
+|---|--------|---------------|
+| S1 (recommended) | Follow 13-A3 as written: fix the Ditto bug with the three quarantined games as regression tests, then **re-run Gen 4 of policy v max-damage on its same indices** and judge 3e again. Nothing else is replayed | This is the remedy 13-A3 names for exactly this case. The policy is untouched; only the tracker stops rejecting a legal game. 498 of the 500 pairs should replay move for move; the three pairs get played |
+| S2 | Treat the range as burned (13-A4): fix the bug, then run the whole evaluation again on 3,000,000–3,000,499 | Cleanest, costs about an hour, and uses the range Order 15 had set aside for its downstream check |
+| S3 | Accept the result with 3e recorded as missed by 0.1 point, on the worst-case arithmetic above | No more games; the health mark is waived once, in writing |
+
+Not committed, in the working tree: the golden-decision test and its recorder (Order 14-lite A8), written while the run was
+going. They change no behaviour of the evaluated code, and they stay uncommitted until this is ruled.
 
 ### Order 14-lite: hygiene that v1 needs (no stop)
 1. **The user** moves the repository out of OneDrive to `C:\dev\Poketrix` when convenient. Ask them once, then confirm a clean
