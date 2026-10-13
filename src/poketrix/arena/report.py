@@ -15,7 +15,10 @@ from poketrix.advisor.latency import percentile
 from poketrix.showdown.corpus import wilson_interval
 
 POOLED = 0  # the "generation" under which all four are counted together
-NON_INFERIORITY_MARGIN = 0.02  # E3.2: against random we may trail max-damage by at most this
+# E3.2 (ruling 13-A6): against random we may trail max-damage by at most this much, pooled
+# over the generations, and by at most the wider margin in any single generation.
+NON_INFERIORITY_MARGIN = 0.02
+GENERATION_MARGIN = 0.05
 QUARANTINE_LIMIT = 0.005  # E3.3: share of a generation's pairs that may be quarantined
 BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED = 10_000, 20261402
 
@@ -51,6 +54,7 @@ class Tally:
     voluntary_switches: int = 0
     thrown_away: list[str] = field(default_factory=list)
     self_ko: int = 0
+    won: dict[tuple, bool] = field(default_factory=dict)  # (gen, index, swap) -> player 1 won
 
     @property
     def win_rate(self) -> float:
@@ -91,6 +95,7 @@ class Tally:
         for game in games:
             self.games += 1
             self.wins += game["winner"] == "p1"
+            self.won[(game["gen"], game["index"], game["swap"])] = game["winner"] == "p1"
             self.ties += game["winner"] is None
             self.turns += game["turns"]
             for side in ("p1", "p2"):
@@ -131,7 +136,7 @@ def load(paths: list[Path]) -> dict[tuple[str, str], dict[int, Tally]]:
 
 def verdict(policy_max: dict[int, Tally], policy_random: dict[int, Tally],
             max_random: dict[int, Tally]) -> list[tuple[str, bool, str]]:
-    """The E3 pass marks, as amended by 13-A1 and 13-A3: (mark, passed, the numbers)."""
+    """The E3 pass marks, as amended by 13-A3 and 13-A6: (mark, passed, the numbers)."""
     pooled = policy_max[POOLED]
     gens = sorted(gen for gen in policy_max if gen != POOLED)
     lowest = min(gens, key=lambda gen: policy_max[gen].win_rate)
@@ -143,13 +148,14 @@ def verdict(policy_max: dict[int, Tally], policy_random: dict[int, Tally],
          policy_max[lowest].win_rate >= 0.45,
          f"lowest is Gen {lowest} at {policy_max[lowest].win_rate:.1%}"),
     ]
-    for gen in gens:
+    for gen, margin in [(POOLED, NON_INFERIORITY_MARGIN), *((g, GENERATION_MARGIN) for g in gens)]:
         ours, theirs = policy_random[gen], max_random[gen]
         low, high = difference_interval(ours.wins, ours.games, theirs.wins, theirs.games)
+        where = "pooled" if gen == POOLED else f"Gen {gen}"
         marks.append((
-            (f"2. Against random, Gen {gen}: not more than "
-            f"{NON_INFERIORITY_MARGIN:.0%} behind max-damage"),
-            low > -NON_INFERIORITY_MARGIN,
+            (f"2{'a' if gen == POOLED else 'b'}. Against random, {where}: not more than "
+            f"{margin:.0%} behind max-damage"),
+            low > -margin,
             (f"ours {ours.win_rate:.1%}, max-damage {theirs.win_rate:.1%}, "
             f"difference {ours.win_rate - theirs.win_rate:+.1%} ({low:+.1%} to {high:+.1%})"),
         ))
@@ -174,6 +180,22 @@ def verdict(policy_max: dict[int, Tally], policy_random: dict[int, Tally],
          f"worst is Gen {worst[1]} with {worst[2]} pairs ({worst[0]:.2%})"),
     ]
     return marks
+
+
+def paired_difference(ours: Tally, theirs: Tally) -> tuple[int, int, int, float, float, float]:
+    """The same games played by two players against the same opponent, compared game by game:
+    (games in common, only ours won, only theirs won, difference, low, high).
+
+    Supplementary to the verdict: the same teams and seed make the two results correlated, so
+    this interval (Wald, for a difference of paired proportions) shows the real precision.
+    """
+    common = sorted(set(ours.won) & set(theirs.won))
+    only_ours = sum(ours.won[key] and not theirs.won[key] for key in common)
+    only_theirs = sum(theirs.won[key] and not ours.won[key] for key in common)
+    n = max(1, len(common))
+    difference = (only_ours - only_theirs) / n
+    spread = 1.96 * sqrt(max(0.0, only_ours + only_theirs - (only_ours - only_theirs) ** 2 / n)) / n
+    return len(common), only_ours, only_theirs, difference, difference - spread, difference + spread
 
 
 def print_report(paths: list[Path]) -> None:
@@ -214,3 +236,13 @@ def print_report(paths: list[Path]) -> None:
         for mark, passed, numbers in marks:
             print(f"- {'PASS' if passed else 'FAIL'}  {mark}: {numbers}")
         print(f"\n{'E3 PASSES' if all(p for _, p, _ in marks) else 'E3 FAILS'}")
+        print("\nSupplementary, not part of the verdict: the against-random games compared "
+              "game by game (same teams, same seed)\n")
+        print("| Gen | Games in common | Only the policy won | Only max-damage won "
+              "| Paired difference | 95% interval |")
+        print("|---|---|---|---|---|---|")
+        ours, theirs = by_match["policy-random"][0], by_match["maxdamage-random"][0]
+        for gen in [*sorted(g for g in ours if g != POOLED), POOLED]:
+            n, a, b, difference, low, high = paired_difference(ours[gen], theirs[gen])
+            print(f"| {gen or 'all'} | {n} | {a} | {b} | {difference:+.1%} "
+                  f"| {low:+.1%} to {high:+.1%} |")

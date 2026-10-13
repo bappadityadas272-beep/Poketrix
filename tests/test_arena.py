@@ -8,7 +8,13 @@ import pytest
 from test_advisor import ours, position
 
 from poketrix.arena.play import MaxDamagePlayer, PolicyPlayer, to_choice
-from poketrix.arena.report import POOLED, difference_interval, load, verdict
+from poketrix.arena.report import (
+    POOLED,
+    difference_interval,
+    load,
+    paired_difference,
+    verdict,
+)
 from poketrix.schemas import ActionKind, OptionScore
 
 
@@ -108,16 +114,28 @@ def test_against_random_the_mark_is_non_inferiority_not_a_ceiling(tmp_path):
     def mark(ours, theirs, pairs):
         found = _results(tmp_path, 150, max_wins_against_random=theirs,
                          wins_against_random=ours, pairs=pairs)
-        return _marks(found)["2."]
+        marks = _marks(found)
+        return {"2a": marks["2a"], "2b": marks["2b"]}
 
-    assert mark(ours=950, theirs=950, pairs=500)  # level with it at 95%: enough, just
-    assert mark(ours=970, theirs=950, pairs=500)
-    assert not mark(ours=900, theirs=950, pairs=500)  # five points behind
-    # The interval is about two points wide each way at 1,000 games, so the mark cannot tell
-    # "one point behind" from "more than two", and at lower rates not even "level":
-    assert not mark(ours=940, theirs=950, pairs=500)
-    assert not mark(ours=900, theirs=900, pairs=500)
-    assert not mark(ours=190, theirs=190, pairs=100)
+    # Ruling 13-A6. Pooled over four generations (4,000 games each) the margin is 2 points:
+    # level play passes, at any rate; clearly worse play does not.
+    assert mark(ours=880, theirs=880, pairs=500) == {"2a": True, "2b": True}
+    assert mark(ours=875, theirs=880, pairs=500)["2a"]  # half a point behind: still inside
+    assert not mark(ours=870, theirs=880, pairs=500)["2a"]  # one point behind: no longer
+    # Per generation the margin is 5 points: a safety net against one clearly worse generation.
+    assert mark(ours=870, theirs=880, pairs=500)["2b"]
+    assert not mark(ours=830, theirs=880, pairs=500)["2b"]
+    assert not mark(ours=190, theirs=190, pairs=100)["2a"]  # too few games to say
+
+
+def test_the_supplementary_view_compares_the_same_games(tmp_path):
+    found = _results(tmp_path, 150, wins_against_random=190, max_wins_against_random=180)
+    ours, theirs = found["policy-random"][1], found["maxdamage-random"][1]
+    common, only_ours, only_theirs, difference, low, high = paired_difference(ours, theirs)
+    assert (common, only_ours, only_theirs) == (200, 10, 0)  # ours won every game theirs won
+    assert difference == pytest.approx(0.05) and 0 < low < difference < high
+    # The same lead, unpaired, cannot be told from zero at this size.
+    assert difference_interval(190, 200, 180, 200)[0] < 0
 
 
 def test_a_rejected_choice_or_an_error_fails_the_health_marks(tmp_path):
