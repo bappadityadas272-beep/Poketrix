@@ -8,6 +8,8 @@ fall back.
 
 import json
 import math
+from bisect import bisect_right
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -55,8 +57,40 @@ def model_paths(version: str, directory: Path = MODEL_DIR) -> tuple[Path, Path]:
             directory / f"opponent-{version}.manifest.json")
 
 
+@dataclass(frozen=True)
+class Isotonic:
+    """A non-decreasing map from a predicted probability to an observed one, linear between
+    its points and flat beyond them."""
+
+    x: tuple[float, ...]
+    y: tuple[float, ...]
+
+    def __call__(self, value: float) -> float:
+        at = bisect_right(self.x, value)
+        if at == 0:
+            return self.y[0]
+        if at == len(self.x):
+            return self.y[-1]
+        x0, x1, y0, y1 = self.x[at - 1], self.x[at], self.y[at - 1], self.y[at]
+        return y0 + (y1 - y0) * (value - x0) / (x1 - x0)
+
+
+def calibrated(switch: Isotonic, attack_share: Isotonic, odds) -> list[float]:
+    """Odds in `ACTIONS` order, remapped: P(switch) by its own map, and the rest split between
+    attack and utility by the map of the attack share."""
+    p_attack, p_utility, p_switch = (float(odds[ACTIONS.index(a)]) for a in ACTIONS)
+    leaves = switch(p_switch)
+    attack = (1 - leaves) * attack_share(p_attack / max(p_attack + p_utility, 1e-12))
+    by_action = {"attack": attack, "utility": 1 - leaves - attack, "switch": leaves}
+    return [by_action[action] for action in ACTIONS]
+
+
 class XgbModel:
     """Gradient-boosted trees over the feature vector, calibrated by one temperature.
+
+    When the manifest holds display maps (ruling 15-R, `calibration.py`), `predict` returns
+    the trees' plain odds passed through them instead: that is what is shown to a player.
+    `switch_cap` is then the P(switch) above which the shown number is "70%+", or None.
 
     The trees are read from XGBoost's saved JSON and walked here, all at once with NumPy:
     the same margins as XGBoost's own prediction (a test compares them), at a fraction of its
@@ -66,6 +100,8 @@ class XgbModel:
     def __init__(self, version: str = "xgb-1", directory: Path = MODEL_DIR) -> None:
         self.version = version
         self._temperature = 1.0
+        self._maps: tuple[Isotonic, Isotonic] | None = None
+        self.switch_cap: float | None = None
         self._problem = self._load(*model_paths(version, directory))
 
     def _load(self, model_file: Path, manifest_file: Path) -> str | None:
@@ -82,6 +118,12 @@ class XgbModel:
         if tuple(manifest["features"]) != FEATURES or tuple(manifest["actions"]) != ACTIONS:
             return f"{self.version} was trained on other features: train it again"
         self._temperature = manifest["temperature"]
+        display = manifest.get("display_calibration")
+        if display is not None:
+            maps = display["maps"]
+            self._maps = tuple(Isotonic(tuple(maps[name]["x"]), tuple(maps[name]["y"]))
+                               for name in ("switch", "attack_share"))
+            self.switch_cap = display["switch_cap"]
         self._levels = manifest["params"]["max_depth"]
         self._read_trees(numpy, saved["learner"])
         return None
@@ -132,7 +174,11 @@ class XgbModel:
                             for action in range(len(ACTIONS))], axis=1) + self._base
 
     def predict(self, view: DecisionView) -> ActionPrediction:
-        odds = softmax(self.margins([view.vector()])[0], self._temperature)
+        margins = self.margins([view.vector()])[0]
+        if self._maps is None:
+            odds = softmax(margins, self._temperature)
+        else:
+            odds = calibrated(*self._maps, softmax(margins, 1.0))
         return ActionPrediction(
             **{f"p_{action}": share for action, share in zip(ACTIONS, odds, strict=True)},
             model_version=self.version,

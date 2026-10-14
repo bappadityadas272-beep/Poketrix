@@ -12,14 +12,17 @@ from poketrix.advisor.latency import measure, percentile
 from poketrix.advisor.pipeline import NO_SETS, NO_TARGET, TRANSFORMED
 from poketrix.advisor.policy import Inputs, by_power, decide, hazard_share, trap_risk
 from poketrix.advisor.situation import Situation
+from poketrix.advisor.writer import SACRIFICE, Brief, TemplateWriter
 from poketrix.calc import acts_first_chance, compute_stats, evaluate_move, expected_hp_share
 from poketrix.dex import Dex
 from poketrix.schemas import (
     ActionKind,
     ActionPrediction,
     BattlePokemon,
+    Decision,
     Generation,
     MoveOutlook,
+    OptionScore,
     Recommendation,
     Stat,
     SubsystemStatus,
@@ -236,6 +239,16 @@ def test_a_move_that_faints_its_user_is_charged_everything_it_has_left():
         assert -0.1 < report.numbers["score.explosion"] <= dealt - 1.0 + 1e-9
         assert report.recommendation.move_id != "explosion"
     assert advise(decisions[3]).recommendation.move_id == "hiddenpowerground"
+
+
+def test_advice_to_use_a_self_faint_move_says_it_sacrifices_the_pokemon():
+    """Ruling 15-R: the words, whatever the score."""
+    snapshot = position([ours("forretress", has_move="explosion")], "magnezone")
+    situation = Situation(snapshot, PRIOR, Dex(4))
+    decision = Decision(options=[OptionScore(action=ActionKind.MOVE, move_id="explosion")],
+                        reason="best_trade")
+    advice = TemplateWriter().write(Brief(situation, decision, {}))
+    assert advice.explanation.startswith(f"Explosion {SACRIFICE}: Forretress faints.")
 
 
 @pytest.mark.parametrize(

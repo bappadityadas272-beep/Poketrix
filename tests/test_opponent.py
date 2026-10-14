@@ -191,3 +191,69 @@ def test_a_stay_costs_what_attack_and_utility_were_given():
     assert error == pytest.approx(0.5 * 0.25 + 0.5 * 0.25)
     gain, low, high = improvement_interval(numpy.full(6, 0.1), numpy.array(list("aabbcc")))
     assert (gain, low, high) == pytest.approx((0.1, 0.1, 0.1))
+
+
+# --------------------------------------------------------------------------- ruling 15-R
+
+
+def test_the_tendency_line_reads_the_model_and_caps_the_switch_odds():
+    from poketrix.advisor.tendency import UNAVAILABLE, describe
+    from poketrix.schemas import ActionPrediction
+
+    odds = ActionPrediction(p_attack=0.5, p_utility=0.05, p_switch=0.45, model_version="xgb-1")
+    assert describe(odds) == "Opponent tendency: switch 45% · attack 50% · utility 5%"
+    leaving = ActionPrediction(p_attack=0.1, p_utility=0.05, p_switch=0.85, model_version="xgb-1")
+    assert describe(leaving, switch_cap=0.7) == ("Opponent tendency: switch 70%+ · attack 10% "
+                                                 "· utility 5%")
+    assert describe(None) == UNAVAILABLE
+
+
+def test_the_tendency_comes_from_the_turn_and_leaves_the_advice_alone():
+    pytest.importorskip("numpy")
+    from poketrix.advisor.tendency import tendency, tendency_line
+
+    snapshot = position([ours("garchomp"), ours("skarmory")], "magnezone")
+    report = advise(snapshot)
+    assert report.opponent.payload.model_version == Heuristic.version  # the policy's model
+    model = XgbModel()
+    shown = tendency(snapshot, report, model)
+    assert shown.model_version == "xgb-1"
+    assert shown == model.predict(_view_of_turn(snapshot, report))
+    assert tendency_line(snapshot, report, _Missing()).startswith("Opponent tendency: not available")
+
+
+def _view_of_turn(snapshot, report):
+    from poketrix.advisor import stages
+    from poketrix.advisor.situation import Situation
+
+    situation = Situation(snapshot, load_prior(4), Dex(4))
+    ours_index, theirs = situation.me.active_index, situation.them.active_index
+    return stages.opponent_view(
+        situation, report.uncloak.payload.posteriors[theirs],
+        report.threats.payload.by_target[ours_index],
+        report.offence.payload.by_attacker[ours_index], report.order.payload.first[ours_index],
+    )
+
+
+def test_the_isotonic_fit_never_decreases_and_keeps_the_mean():
+    numpy = pytest.importorskip("numpy")
+    pytest.importorskip("xgboost")
+    from poketrix.opponent.calibration import fit_isotonic
+    from poketrix.opponent.models import calibrated
+
+    x = numpy.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    hit = numpy.array([0, 1, 0, 0, 1, 1.0])
+    fitted = fit_isotonic(x, hit)
+    assert list(fitted.y) == sorted(fitted.y) and fitted.y == pytest.approx((0, 1 / 3, 1))
+    assert [fitted(v) for v in (0.0, 1.0)] == [0.0, 1.0]  # flat beyond its points
+    odds = calibrated(fitted, fitted, [0.6, 0.1, 0.3])
+    assert sum(odds) == pytest.approx(1.0) and min(odds) >= 0
+
+
+def test_analyze_prints_the_opponent_tendency(tmp_path, capsys):
+    from poketrix.__main__ import main
+
+    log = tmp_path / "battle.log"
+    log.write_text(load_battles(4)[0]["player"], encoding="utf-8")
+    main(["analyze", str(log), "--turn", "2"])
+    assert "Opponent tendency: " in capsys.readouterr().out
