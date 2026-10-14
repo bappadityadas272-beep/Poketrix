@@ -28,7 +28,7 @@ listed below is v2.
 | 13 | One-shot evaluation (13-A6 rules) | — | **Done, passed** |
 | 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
 | 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
-| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Built; **all three pass marks met**; downstream check running (3,000,000–3,000,199) |
+| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **Stopped for review.** All three pass marks met; downstream check **flagged** (pooled −1.6, lower bound −3.5) |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
 | 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
@@ -3143,7 +3143,7 @@ decides whether the `xgb-1` model becomes the default.
 **Downstream range, written before any game was played (2026-10-15): indices 3,000,000–3,000,199, Gens 1–4, policy v max-damage,
 once with `--opponent heuristic-0` and once with `--opponent xgb-1`, same code (`a4c3e63`), same simulator. Used once.**
 
-#### Order 15 result (2026-10-15): **all three pass marks met.** Downstream check: see below.
+#### Order 15 result (2026-10-15): **all three pass marks met; the downstream sanity check is flagged** (pooled −1.6 points, lower bound −3.5).
 
 **What was built** (`src/poketrix/opponent/`, on `task/07-opponent-model`):
 - `features.py`: `DecisionView`, 20 features. Stage 5 builds it from stages 2–4 (`stages.opponent_view`) and asks an injected
@@ -3238,6 +3238,24 @@ Reliability of xgb-1 on the pooled test split:
 | 1. Pooled log-loss gain over **both** baselines, bootstrap lower bound > 0 | **Pass**: +0.102 over base rates, +0.107 over heuristic-0 |
 | 2. Pooled ECE ≤ 0.03 after calibration | **Pass**: 0.0157 (top choice); 0.0147 for P(switch) |
 | 3. Per gen, log-loss not worse than base rates | **Pass**: 0.614 < 0.784; 0.824 < 0.866; 0.817 < 0.974; 0.732 < 0.902 |
+
+**Downstream check (2026-10-15), indices 3,000,000–3,000,199, policy v max-damage, 1,600 games per model, 0 quarantined, 0 illegal,
+0 errors: ⚑ FLAGGED. The pooled lower bound, −3.5 points, is below −3.** This is a sanity check, not a pass mark.
+
+| Gen | heuristic-0 | xgb-1 | Only xgb-1 won / only heuristic-0 won | Paired difference (95%) |
+|---|---|---|---|---|
+| 1 | 65.2% | 59.0% | 21 / 46 | **−6.2 (−10.2 to −2.3)** |
+| 2 | 80.2% | 79.8% | 33 / 35 | −0.5 (−4.5 to +3.5) |
+| 3 | 78.8% | 81.2% | 32 / 22 | +2.5 (−1.1 to +6.1) |
+| 4 | 84.5% | 82.2% | 18 / 27 | −2.2 (−5.5 to +1.0) |
+| **all** | **77.2%** | **75.6%** | 104 / 130 | **−1.6 (−3.5 to +0.2)** |
+
+Other differences with xgb-1: self-KO moves advised 198 against 125 (Gen 1: 79 against 53; Gen 2: 62 against 34); voluntary switches
+13.0% against 12.7%; p95 latency 49.7 ms against 48.1 ms; `fallback` 2.62% against 2.71%. The loss is concentrated in Gen 1, where
+xgb-1 is the best predictor of people (log-loss 0.614 against 0.776). This is the case the spec warned about: a better model of humans
+playing against a bot. The policy only reads `p_attack` (the `a` in its formula), and xgb-1's `a` is calibrated on ladder players, not on
+max-damage, which attacks every turn. **Recommendation: keep heuristic-0 as the turn engine's default; ship xgb-1 for the overlay's
+opponent read (human opponents), and judge it there.** The reviewer decides.
 
 Ten most important features (total gain): `alive` 14.5, `damaging_share` 13.8, `best_share` 10.2, `boosts` 7.4, `generation` 7.1,
 `moves_first` 7.0, `best_ko` 6.7, `target_boosts` 6.6, `target_status` 5.8, `target_best_share` 4.4.
