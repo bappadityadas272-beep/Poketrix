@@ -30,7 +30,7 @@ listed below is v2.
 | 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **Done, approved (ruling 15-R)**, carried out; `cp-07` |
 | 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Built on `task/08-overlay`; **waiting for the demo screenshots** |
-| 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
+| 17 | v1 wrap-up: README, results, demo, explainer | **Stop before `v1.0`** (reviewer) | README and v2 list done on `task/09-v1-wrapup`; waiting for the demo (screenshot, `cp-08`) |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
 
@@ -3319,6 +3319,12 @@ is not reproduced on train + valid, which points to those 188 test battles rathe
 two sparsest bins (34 rows in all) keep the cap on. Note: I first set a 30-row minimum per bin, which would have lifted the cap on a
 29-row bin. I removed it before anything was committed: the ruling says the tail bins must hold, and the cap stays.
 
+#### Ruling 15-R outcome (reviewer, 2026-10-15)
+- **The "70%+" cap stays:** the cross-fitted 0.8–0.9 bin is 0.826 predicted against 0.690 observed.
+- **The test-tail error is clustered:** those 199 test rows (0.85 predicted, 0.40 observed) come from a few battles, so a few
+  switch-happy players can skew them. One more reason to keep the cap and not over-trust the tail.
+- **Removing the 30-case rule was correct:** it would have lifted the cap on a technicality, and nothing was committed with it.
+
 ### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
 Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
 
@@ -3384,6 +3390,21 @@ names it.
    `utility_scale` > 1.5, logbook archiving, the dex field, exact desync detection, timing on AC, and Gen 5+.
    Added by ruling 15-R: more Gen 2 data (93 training battles), **the self-KO audit (urgent)**, and xgb-1 inside the policy after a
    human trial.
+
+## v2 list (consolidated 2026-10-15, Order 17)
+
+| Area | Item | Source |
+|------|------|--------|
+| Policy | **Self-KO audit (urgent):** Explosion is advised with a knock-out chance under 50% about half the time; 198 cases with xgb-1 against 125 | 13-R, 15-R |
+| Policy | xgb-1 inside the policy for human opponents, only after a human trial | 15-R |
+| Policy | Gen 1 diagnosis (the weakest generation: 68.7% against max-damage) | 13-R |
+| Policy | Opponent priority moves, recoil and recharge, set-up moves, `utility_scale` above 1.5 | 13-R |
+| Data | More Gen 2 replays: 93 training battles, and its gain interval crosses 0 | 15-R |
+| Opponent model | Recheck the P(switch) tail on new battles; lift the "70%+" cap only when every bin from 0.7 up holds within ±0.10 | 15-R |
+| Evaluation | An independent baseline (not using Poketrix's own set estimate) and a human trial | 13-R |
+| Overlay | Live-client hook tested in real games; a configurable port | Order 16 |
+| Housekeeping | Logbook archiving, the dex `selfdestruct` field, exact Gen 1 desync detection, timing on AC power | 14-lite |
+| Scope | Gen 5+; then the original design's knowledge layer, Nuzlocke mode and vision | design doc |
 
 ## Standing rule added: the autonomy envelope (2026-10-13)
 
