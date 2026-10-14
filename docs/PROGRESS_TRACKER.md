@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (repository moved to `C:\dev\Poketrix`, 14-lite done; Phase 7, Order 15, in progress)
+Last updated: 2026-10-15 (batch 10, build to the end: B1–B10 behind flags, then F1)
 
 ## Status at a glance
 
@@ -20,19 +20,29 @@ Tests: 928 passing on `main` (`cp-07`) in the default run, plus the timing tests
 
 ## ▶ Current orders (read this first)
 
-**Target: a demonstrable v1 by 2026-10-16** (proven engine + learned opponent model + read-only overlay). Anything not
-listed below is v2.
+**Approach (user, 2026-10-14): build first, verify at the end.** Every remaining feature is built behind a flag that is OFF by
+default, so `main` keeps behaving exactly like `cp-08`. One final paired evaluation (F1) decides which flags are switched on.
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 13 | One-shot evaluation (13-A6 rules) | — | **Done, passed** |
-| 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
-| 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
-| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **Done, approved (ruling 15-R)**, carried out; `cp-07` |
-| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Built on `task/08-overlay`; **waiting for the demo screenshots** |
-| 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
+| 13–15 | Phase 6 evaluation, hygiene, Phase 7 | — | **Done** (`cp-06`, `cp-07`) |
+| 16 | Phase 8 overlay MVP | — | **Done:** replay demo passed (23 ms); the rated-guard bug was found and fixed. Live recheck deferred to F2. `cp-08` |
+| 17 | v1 wrap-up (README, v2 list) | — | README and v2 list merged; `v1.0` waits for F3 |
+| B1 | Self-KO audit and `selfko_guard` | No | Queued |
+| B2 | Opponent priority in move order (`opp_priority`) | No | Queued |
+| B3 | Recoil and recharge costs (`self_costs`) | No | Queued |
+| B4 | Set-up moves (`setup_value`) | No | Queued |
+| B5 | Gen 1 diagnosis and fixes for its top 2 causes (`gen1_*`) | No | Queued |
+| B6 | More Gen 2 replays, xgb-2, tail calibration | No | Queued |
+| B7 | xgb inside the policy as an option (`opponent_model`) | No | Queued |
+| B8 | Independent baseline bot in the arena | No | Queued |
+| B9 | Human-agreement proxy on real replays | No | Queued |
+| B10 | Housekeeping (logbook archive, dex `selfdestruct`, Gen 1 desync, timing on AC) | No | Queued |
+| F1 | Final tuning and paired evaluation (seeds 4,000,000–4,000,499) | **Yes, the first review stop** | Queued |
+| F2 | Manual rechecks: the rated guard live, a live game | With the user | Queued |
+| F3 | Decoration and `v1.0` | With the user | Queued |
 
-The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
+The full text is in "▶ ACTIVE — Orders for Claude Code, batch 10".
 
 ## Phase 0 — scaffold (`cp-00`)
 
@@ -3319,6 +3329,12 @@ is not reproduced on train + valid, which points to those 188 test battles rathe
 two sparsest bins (34 rows in all) keep the cap on. Note: I first set a 30-row minimum per bin, which would have lifted the cap on a
 29-row bin. I removed it before anything was committed: the ruling says the tail bins must hold, and the cap stays.
 
+#### Ruling 15-R outcome (reviewer, 2026-10-15)
+- **The "70%+" cap stays:** the cross-fitted 0.8–0.9 bin is 0.826 predicted against 0.690 observed.
+- **The test-tail error is clustered:** those 199 test rows (0.85 predicted, 0.40 observed) come from a few battles, so a few
+  switch-happy players can skew them. One more reason to keep the cap and not over-trust the tail.
+- **Removing the 30-case rule was correct:** it would have lifted the cap on a technicality, and nothing was committed with it.
+
 ### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
 Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
 
@@ -3384,6 +3400,77 @@ names it.
    `utility_scale` > 1.5, logbook archiving, the dex field, exact desync detection, timing on AC, and Gen 5+.
    Added by ruling 15-R: more Gen 2 data (93 training battles), **the self-KO audit (urgent)**, and xgb-1 inside the policy after a
    human trial.
+
+## v2 list (consolidated 2026-10-15, Order 17)
+
+| Area | Item | Source |
+|------|------|--------|
+| Policy | **Self-KO audit (urgent):** Explosion is advised with a knock-out chance under 50% about half the time; 198 cases with xgb-1 against 125 | 13-R, 15-R |
+| Policy | xgb-1 inside the policy for human opponents, only after a human trial | 15-R |
+| Policy | Gen 1 diagnosis (the weakest generation: 68.7% against max-damage) | 13-R |
+| Policy | Opponent priority moves, recoil and recharge, set-up moves, `utility_scale` above 1.5 | 13-R |
+| Data | More Gen 2 replays: 93 training battles, and its gain interval crosses 0 | 15-R |
+| Opponent model | Recheck the P(switch) tail on new battles; lift the "70%+" cap only when every bin from 0.7 up holds within ±0.10 | 15-R |
+| Evaluation | An independent baseline (not using Poketrix's own set estimate) and a human trial | 13-R |
+| Overlay | Live-client hook tested in real games; a configurable port | Order 16 |
+| Housekeeping | Logbook archiving, the dex `selfdestruct` field, exact Gen 1 desync detection, timing on AC power | 14-lite |
+| Scope | Gen 5+; then the original design's knowledge layer, Nuzlocke mode and vision | design doc |
+
+## ▶ ACTIVE — Orders for Claude Code, batch 10, "build to the end" (2026-10-14)
+
+The user chose **build first, verify at the end.** Carry it out with no review stops; stop only for a real blocker (a broken test that
+can't be fixed, data that can't be got, or a measurement that contradicts this spec).
+
+**0. Merge the overlay now.** Merge `task/08-overlay` `--no-ff`, tag `cp-08`, push. The rated-guard live recheck is deferred to F2 (the
+fix and its unit test are in). Then merge the wrap-up branch onto `main`. No `v1.0` yet.
+
+**Safety rules for the whole batch (non-negotiable):**
+- Every behaviour change goes behind a `PolicySettings` (or config) flag that **defaults to OFF**. With all flags off, behaviour stays
+  identical to `cp-08`: the golden-decision test passes unchanged after every commit.
+- One branch per item (`task/10-B1-...`). Merge each to `main` when its unit tests, the full suite, `ruff` and CI are green. No stop; each
+  merge gets a tag (`cp-10-B1`, …).
+- No evaluation seeds while building. Game-based checks use the tuning range (1,000,000+) or a new diagnostic range (5,000,000+),
+  written here first.
+- Keep this tracker updated after each item: what was built, its flag name, its tests.
+
+**Build list, in order:**
+- **B1, self-KO audit (urgent).** Measure how often self-faint moves are advised and when (Pokémon left, KO chance, whether the
+  alternative was worse), on the tuning range. Flag `selfko_guard`: a self-faint move is allowed only when its KO chance is at least a
+  threshold (parameter, default 0.8) or it's our last useful Pokémon.
+- **B2, opponent priority in move order.** Flag `opp_priority`: P(their best move has priority), from the posterior (Sucker Punch,
+  ExtremeSpeed, Aqua Jet, Ice Shard, Bullet Punch, Mach Punch, Quick Attack, Vacuum Wave, Shadow Sneak, Fake Out), lowers f(m), following
+  each generation's priority rules.
+- **B3, recoil and recharge.** Flag `self_costs`: recoil share = recoil fraction × expected absolute damage ÷ our remaining HP, capped at
+  1. Hyper Beam's recharge costs a turn's exchange, except in Gen 1 when it KOs (no recharge there).
+- **B4, set-up moves.** Flag `setup_value`: a boosting move scores the value of the boosted next exchange (with γ), only when we survive
+  the opponent's best hit this turn with high probability. Cap the number of set-up turns.
+- **B5, Gen 1 diagnosis.** On 50 lost Gen 1 games from the tuning or diagnostic range, tag what decided each (paralysis or freeze luck,
+  crits, partial trapping, Hyper Beam, Explosion's Defense halving, sleep undervalued, a policy mistake) and count. Fix the top 2 causes
+  behind `gen1_*` flags.
+- **B6, more Gen 2 data.** About 500 more Gen 2 ladder replays (pre-authorised, polite, same script). Retrain as xgb-2 with the same spec on
+  a fresh battle split; redo the P(switch) tail calibration (cross-fitting, train + validation only). Report the metrics; xgb-1 stays the
+  default until F1.
+- **B7, xgb inside the policy as an option.** Flag `opponent_model` = heuristic-0 | xgb, default heuristic-0. Meant only for human
+  opponents (the overlay).
+- **B8, an independent baseline bot.** A simple heuristic player that uses neither our estimator nor our calculator (Showdown's visible
+  information plus basic type and power rules), added to the arena as a third opponent.
+- **B9, human-agreement proxy.** On the real-replay test split: how often our advice matches the winner's actual choice, against how often
+  it matches the loser's. Per gen. The first signal about play against people.
+- **B10, housekeeping.** Archive the logbook into `docs/history/` (under 400 lines left, plus a decision index); the dex `selfdestruct`
+  field replacing the hard-coded list; exact Gen 1 desync detection (ground truth stays at 0 false claims); timing tests on AC power.
+
+**F1, the final verification (after B1–B10).**
+- Write the plan here before running: the flags to tune, a small grid per flag, the tuning seeds (fresh indices in the 1,000,000 range),
+  and the final evaluation seeds **4,000,000–4,000,499, used once**.
+- Tune each flag on the tuning seeds, against max-damage and the independent baseline (B8).
+- Final paired evaluation: the candidate setting (the best passing flags on) against `cp-08` (all flags off). Opponents: max-damage,
+  random and B8, 500 pairs per gen each.
+- **Pass, per flag:** pooled paired difference lower bound > −1 point against max-damage and against B8; no health regressions (0 illegal
+  moves, timeouts under 1%, p95 under 250 ms). Only flags that pass become default ON. Record everything.
+- **STOP with the F1 report: the first review stop.**
+
+**After F1 (the user and the reviewer):** F2, the manual rechecks (the rated guard live, a live game). F3, decoration (README polish, demo
+images, explainer doc), then tag `v1.0`. Out of scope: Gen 5+.
 
 ## Standing rule added: the autonomy envelope (2026-10-13)
 
