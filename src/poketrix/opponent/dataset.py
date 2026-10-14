@@ -6,7 +6,8 @@ what the *other* player could see when it was made, computed by the turn engine'
 
 A spectator's log gives neither player a known set, while the engine needs one for the
 Pokémon facing the decider. That Pokémon is given its most likely set under the evidence so
-far, as if its owner were watching: during a game the owner knows the real one.
+far (`advisor.spectator.seen_as`), as if its owner were watching: during a game the owner
+knows the real one.
 
 A decider that fainted before acting, or could not move (asleep, frozen, fully paralysed,
 flinched, infatuated), stayed in: it chose a move, but the log does not say which. Such a row
@@ -32,12 +33,13 @@ from pathlib import Path
 
 from poketrix.advisor import Deadline, stages
 from poketrix.advisor.situation import Situation
+from poketrix.advisor.spectator import seen_as
 from poketrix.dex import Dex, UnknownDexEntryError
-from poketrix.schemas import ActionRequest, Generation, MoveCategory, PlayerSlot
+from poketrix.schemas import Generation, MoveCategory, PlayerSlot
 from poketrix.showdown import TurnSnapshot, UnsupportedBattleError, parse_battle
 from poketrix.showdown import events as ev
 from poketrix.showdown.corpus import REPLAY_DIR, is_ladder_game, load_replays
-from poketrix.uncloak import SetPrior, Uncloaker, hypothesis_set, load_prior
+from poketrix.uncloak import SetPrior, Uncloaker, load_prior
 
 from .features import ACTIONS, DecisionView
 
@@ -117,35 +119,14 @@ def _move_action(event: ev.MoveEvent, dex: Dex) -> str:
 # --------------------------------------------------------------------------- features
 
 
-def observed(snapshot: TurnSnapshot, observer: PlayerSlot, prior: SetPrior) -> Situation | None:
-    """The turn as `observer` would meet it in a game: its active Pokémon has a set (the most
-    likely one) and a request offers that set's moves. None when no set can be named."""
-    side = snapshot.state.sides[observer]
-    found = next((f for f in snapshot.evidence
-                  if f.player is observer and f.team_index == side.active_index), None)
-    if found is None or side.active.fainted:
-        return None
-    posterior = Uncloaker(prior).uncloak(found.species_id, found.evidence).payload
-    if posterior is None:
-        return None
-    likeliest = max(posterior.hypotheses, key=lambda hypothesis: hypothesis.posterior)
-    known = hypothesis_set(side.active, likeliest, prior)
-    team = list(side.team)
-    team[side.active_index] = side.active.model_copy(update={"known_set": known})
-    request = ActionRequest(available_moves=known.moves)
-    state = snapshot.state.model_copy(update={
-        "perspective": observer,
-        "sides": snapshot.state.sides
-        | {observer: side.model_copy(update={"team": team, "request": request})},
-    })
-    return Situation(snapshot.model_copy(update={"state": state}), prior, Dex(prior.gen))
-
-
 def view_of(snapshot: TurnSnapshot, decider: PlayerSlot, prior: SetPrior) -> DecisionView | None:
     """`decider`'s decision at this snapshot, as its opponent sees it. None in the positions
     where the turn engine predicts nothing either."""
-    situation = observed(snapshot, _OTHER[decider], prior)
-    if situation is None or situation.transformed or situation.theirs.fainted:
+    seen = seen_as(snapshot, _OTHER[decider], prior)
+    if seen is None:
+        return None
+    situation = Situation(seen, prior, Dex(prior.gen))
+    if situation.transformed or situation.theirs.fainted:
         return None
     index = situation.them.active_index
     posterior = Uncloaker(prior).uncloak(*situation.evidence(index)).payload

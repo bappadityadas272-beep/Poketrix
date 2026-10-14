@@ -1,4 +1,7 @@
 """Command line:  python -m poketrix analyze <battle log> [--turn N]
+                 python -m poketrix serve [--port 8765] [--debug-log FILE]
+
+`serve` starts the overlay's local server (127.0.0.1 only) for the browser extension.
 
 Prints what the engine sees and advises at one decision of a player's own battle log (one
 that has `|request|` lines): the state, the opponent's likely sets, its threats, our options
@@ -13,6 +16,7 @@ from pathlib import Path
 from poketrix.advisor import TurnAdvisor
 from poketrix.advisor.tendency import tendency_line
 from poketrix.opponent import XgbModel
+from poketrix.overlay.server import PORT, serve
 from poketrix.schemas import ActionKind, BattlePokemon, TurnReport
 from poketrix.showdown import TurnSnapshot, parse_battle
 
@@ -110,9 +114,15 @@ def main(argv: list[str] | None = None) -> int:
     command = commands.add_parser("analyze", help="advice for one turn of a battle log")
     command.add_argument("log", type=Path, help="a player's own battle log (text)")
     command.add_argument("--turn", type=int, help="the turn to analyse (default: the last)")
+    overlay = commands.add_parser("serve", help="the overlay's local server, on 127.0.0.1")
+    overlay.add_argument("--port", type=int, default=PORT)
+    overlay.add_argument("--debug-log", type=Path, help="append each request handled here")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
-    print(analyze(args.log.read_text(encoding="utf-8"), args.turn))
+    if args.command == "serve":
+        serve(args.port, args.debug_log)
+    else:
+        print(analyze(args.log.read_text(encoding="utf-8"), args.turn))
     return 0
 
 
