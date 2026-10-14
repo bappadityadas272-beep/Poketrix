@@ -37,15 +37,23 @@ Settled scope decisions (do not reopen without the user):
 
 ## Environment
 
-- Windows. The repo is in `C:\Users\Lenovo\OneDrive\Desktop\Poketrix`, inside OneDrive. If git shows
-  odd lock or sync errors, that's the likely cause.
+- Windows. The repo lives at `C:\dev\Poketrix` (moved out of OneDrive on 2026-10-14). If the
+  working directory is still under `OneDrive\Desktop`, the move has not happened yet: say so.
+  After a move the `.venv` must be recreated (it remembers its old path).
+- Caches are outside the repo, under `%LOCALAPPDATA%\poketrix-cache`: `pokemon-showdown` (the
+  simulator checkout; set `POKETRIX_SHOWDOWN_DIR` to it before running `poketrix.arena` or
+  rebuilding the prior), `battles` (the simulated corpus) and `arena` (tuning and evaluation
+  results). `data/raw/` in the repo is git-ignored and holds the 2,000 real replays.
+- The user works in day sessions. "Let's resume where we left" (or "resume") starts one: read
+  the tracker's current orders and carry them out. "Save it all" ends one: commit and push,
+  start nothing new.
 - Python >= 3.10 is supported, so import `Self` from `typing_extensions`, not `typing`.
 - Setup: `python -m venv .venv` → `.venv\Scripts\activate` → `pip install -e ".[dev]"` → `pytest`
 - Lint: `ruff check src tests` (must be clean).
 - GitHub: `https://github.com/bappadityadas272-beep/poketrix` (if `git remote -v` is empty, the
   user hasn't pushed yet; ask them).
 
-## Current state — `cp-06` merged (Phases 0–6 done; the turn engine wins 77.4% against max-damage); next: Phase 7, the opponent model, Order 15 (2026-10-14)
+## Current state — `cp-07` merged (Phases 0–7 done; opponent model xgb-1 shown as "opponent tendency"); next: Phase 8, the overlay, Order 16 (2026-10-15)
 
 | Tag   | What exists |
 |-------|-------------|
@@ -59,6 +67,7 @@ Settled scope decisions (do not reopen without the user):
 | cp-05 | `src/poketrix/showdown/` — battle-log parser, spectator and player mode, evidence rules, corpus measurements; 846 tests total |
 | cp-05b | Prior, held-out tables and battle fixtures rebuilt from Showdown's current source; 847 tests total |
 | cp-06 | `src/poketrix/advisor/` and `src/poketrix/arena/` — turn engine, decision policy, simulator harness, golden decisions; 910 tests total |
+| cp-07 | `src/poketrix/opponent/` + `data/models/` — decision dataset from real replays, xgb-1, display calibration, tendency line; 928 tests total |
 
 Schema map (`from poketrix.schemas import ...`):
 - `generation.py`: `GenRules` / `rules_for(gen)`. This is what exists per gen: types, items, abilities,
@@ -194,6 +203,19 @@ Turn engine (`from poketrix.advisor import TurnAdvisor`):
 - `python -m poketrix analyze <log> [--turn N]` prints a turn; `python -m
   poketrix.advisor.latency [dir] [n]` prints the per-stage latency table.
 - CI: `.github/workflows/tests.yml` runs `ruff` and `pytest -m "not timing"` on 3.10 and 3.12.
+
+Opponent model (`from poketrix.opponent import XgbModel, Heuristic, DecisionView`):
+- **Ruling 15-R: the policy keeps heuristic-0 everywhere** (`TurnAdvisor(opponent_model=...)` defaults to it). xgb-1 is
+  information only: `advisor/tendency.py` → "Opponent tendency: switch X% · attack Y% · utility Z%", with switch odds above
+  `XgbModel.switch_cap` (0.70) shown as "70%+". Feeding xgb-1 into the policy is v2, after a human trial.
+- `DecisionView` (`features.py`) is the feature vector; changing its fields makes saved models stale (`XgbModel` refuses them).
+  Stage 5 builds it with `stages.opponent_view`; the dataset builds it with the same code (`dataset.view_of`).
+- `XgbModel` walks the saved trees with NumPy (needs `[ml]`; XGBoost only for training) and applies the manifest's isotonic
+  `display_calibration`; without NumPy or its files it raises `ModelUnavailable` and stage 5 falls back to heuristic-0.
+- Rebuild: `python -m poketrix.opponent.dataset` (ladder games only, into git-ignored `data/raw/opponent/`), then
+  `.training`, then `.calibration`; `.evaluation` prints the test tables. **The test split (seed 20261501) has been read twice;
+  do not read it again** (calibration uses train + valid only). Labels include `stay` (a move was chosen but hidden).
+- **Indices 3,000,000–3,000,199 are used up** (the Phase 7 downstream check).
 
 Carried forward (from the Task 04 review):
 - R8 is decided: no probability is held back for unseen sets. The prior is rebuilt from

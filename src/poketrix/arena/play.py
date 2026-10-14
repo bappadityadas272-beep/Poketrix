@@ -19,6 +19,7 @@ from poketrix.advisor.audit import Guardrails
 from poketrix.advisor.policy import by_power
 from poketrix.advisor.situation import Situation
 from poketrix.dex import Dex
+from poketrix.opponent import Heuristic, OpponentModel
 from poketrix.schemas import ActionKind, OptionScore, PlayerSlot, TurnReport, move_matches
 from poketrix.showdown import BattleReader, TurnSnapshot
 from poketrix.showdown import events as ev
@@ -43,8 +44,10 @@ class Player(Protocol):
 class PolicyPlayer:
     """Plays what the turn engine recommends."""
 
-    def __init__(self, settings: PolicySettings | None = None) -> None:
-        self._advisor = TurnAdvisor(settings=settings or PolicySettings())
+    def __init__(self, settings: PolicySettings | None = None,
+                 opponent_model: OpponentModel | None = None) -> None:
+        self._advisor = TurnAdvisor(settings=settings or PolicySettings(),
+                                    opponent_model=opponent_model or Heuristic())
 
     def choose(self, snapshot: TurnSnapshot) -> Choice:
         report = self._advisor.advise(snapshot)

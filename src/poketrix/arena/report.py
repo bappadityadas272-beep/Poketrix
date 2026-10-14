@@ -198,6 +198,16 @@ def paired_difference(ours: Tally, theirs: Tally) -> tuple[int, int, int, float,
     return len(common), only_ours, only_theirs, difference, difference - spread, difference + spread
 
 
+def _print_paired(ours: dict[int, Tally], theirs: dict[int, Tally], names: tuple[str, str]) -> None:
+    print(f"| Gen | Games in common | Only {names[0]} won | Only {names[1]} won "
+          "| Paired difference | 95% interval |")
+    print("|---|---|---|---|---|---|")
+    for gen in [*sorted(g for g in ours if g != POOLED), POOLED]:
+        n, a, b, difference, low, high = paired_difference(ours[gen], theirs[gen])
+        print(f"| {gen or 'all'} | {n} | {a} | {b} | {difference:+.1%} "
+              f"| {low:+.1%} to {high:+.1%} |")
+
+
 def print_report(paths: list[Path]) -> None:
     found = load(paths)
     for (match, settings), by_gen in found.items():
@@ -228,6 +238,11 @@ def print_report(paths: list[Path]) -> None:
     by_match = {}
     for (match, _), by_gen in found.items():
         by_match.setdefault(match, []).append(by_gen)
+    for match, runs in by_match.items():
+        if len(runs) == 2:  # one match played under two settings, on the same games
+            print(f"\n{match}: the second setting above against the first, game by game "
+                  "(same teams, same seed)\n")
+            _print_paired(runs[1], runs[0], ("the second", "the first"))
     if all(len(by_match.get(m, [])) == 1 for m in
            ("policy-maxdamage", "policy-random", "maxdamage-random")):
         print("\nE3 verdict\n")
@@ -238,11 +253,5 @@ def print_report(paths: list[Path]) -> None:
         print(f"\n{'E3 PASSES' if all(p for _, p, _ in marks) else 'E3 FAILS'}")
         print("\nSupplementary, not part of the verdict: the against-random games compared "
               "game by game (same teams, same seed)\n")
-        print("| Gen | Games in common | Only the policy won | Only max-damage won "
-              "| Paired difference | 95% interval |")
-        print("|---|---|---|---|---|---|")
-        ours, theirs = by_match["policy-random"][0], by_match["maxdamage-random"][0]
-        for gen in [*sorted(g for g in ours if g != POOLED), POOLED]:
-            n, a, b, difference, low, high = paired_difference(ours[gen], theirs[gen])
-            print(f"| {gen or 'all'} | {n} | {a} | {b} | {difference:+.1%} "
-                  f"| {low:+.1%} to {high:+.1%} |")
+        _print_paired(by_match["policy-random"][0], by_match["maxdamage-random"][0],
+                      ("the policy", "max-damage"))

@@ -2,7 +2,8 @@
 
 Prints what the engine sees and advises at one decision of a player's own battle log (one
 that has `|request|` lines): the state, the opponent's likely sets, its threats, our options
-with their scores, and the recommendation. Without `--turn` it takes the last decision.
+with their scores, the recommendation, and the opponent tendency (xgb-1, shown beside the advice,
+never used by it). Without `--turn` it takes the last decision.
 """
 
 import argparse
@@ -10,6 +11,8 @@ import sys
 from pathlib import Path
 
 from poketrix.advisor import TurnAdvisor
+from poketrix.advisor.tendency import tendency_line
+from poketrix.opponent import XgbModel
 from poketrix.schemas import ActionKind, BattlePokemon, TurnReport
 from poketrix.showdown import TurnSnapshot, parse_battle
 
@@ -30,7 +33,7 @@ def _revealed(pokemon: BattlePokemon) -> str:
     return ", ".join(pokemon.revealed_moves) or "none"
 
 
-def render(snapshot: TurnSnapshot, report: TurnReport) -> str:
+def render(snapshot: TurnSnapshot, report: TurnReport, tendency: str) -> str:
     state = snapshot.state
     me, them = state.me, state.opponent
     out = [
@@ -79,6 +82,7 @@ def render(snapshot: TurnSnapshot, report: TurnReport) -> str:
         f"\nRecommendation ({report.status.value}, {report.latency_ms:.0f} ms):",
         f"  {advice.headline}",
         f"  {advice.explanation}",
+        f"\n{tendency}",
     ]
     return "\n".join(out)
 
@@ -92,8 +96,12 @@ def analyze(log: str, turn: int | None = None) -> str:
     chosen = decisions[-1:] if turn is None else [s for s in decisions if s.turn == turn]
     if not chosen:
         return f"No decision at turn {turn}; the log has turns 1 to {decisions[-1].turn}."
-    advisor = TurnAdvisor()
-    return "\n\n".join(render(snapshot, advisor.advise(snapshot)) for snapshot in chosen)
+    advisor, model = TurnAdvisor(), XgbModel()
+    shown = []
+    for snapshot in chosen:
+        report = advisor.advise(snapshot)
+        shown.append(render(snapshot, report, tendency_line(snapshot, report, model)))
+    return "\n\n".join(shown)
 
 
 def main(argv: list[str] | None = None) -> int:

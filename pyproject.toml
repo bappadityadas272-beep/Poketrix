@@ -15,6 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]
+# The learned opponent model (Phase 7). Without it the turn engine uses heuristic-0.
+ml = ["xgboost>=2.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,6 +1,6 @@
 # Poketrix — progress tracker
 
-Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting for the user to move the repository)
+Last updated: 2026-10-14 (repository moved to `C:\dev\Poketrix`, 14-lite done; Phase 7, Order 15, in progress)
 
 ## Status at a glance
 
@@ -12,11 +12,11 @@ Last updated: 2026-10-14 (13-A7 carried out: E3 passes, `cp-06` tagged; waiting 
 | 3 | Math layer (type chart, stats, damage, KO odds) | **Done, merged** (all four generations) | `cp-03a`, `cp-03b`, `cp-03c` |
 | 4 | Bayesian set uncloaker | **Done, merged** (prior, uncloaker, threat report) | `cp-04` |
 | 5 | Showdown battle-log parser → `GameState` | **Done, merged** (spectator + player mode; prior rebuilt from Showdown commit 942cda7) | `cp-05`, `cp-05b` |
-| 6 | Turn engine: orchestrator + decision policy + template synthesis | 12b **accepted**; tuning running; evaluation next under amended pass marks (13-A) | `cp-06` pending |
-| 7 | XGBoost action predictor | Not started | |
+| 6 | Turn engine: orchestrator + decision policy + template synthesis | **Done, merged.** Evaluation passed on every mark: 77.4% (76.1–78.6) against max-damage over 12,000 games | `cp-06` |
+| 7 | XGBoost action predictor | **Done, merged.** xgb-1: log-loss +0.14 over both baselines, ECE 0.016; shown as "opponent tendency", the policy keeps heuristic-0 (15-R) | `cp-07` |
 | — | Knowledge graph / RAG, vision ingestion | Deferred | |
 
-Tests: 847 passing on `main` (`cp-05b`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
+Tests: 928 passing on `main` (`cp-07`) in the default run, plus the timing tests with `pytest -m timing`. `ruff` is clean.
 
 ## ▶ Current orders (read this first)
 
@@ -25,11 +25,11 @@ listed below is v2.
 
 | Order | What | Stop? | Status |
 |-------|------|-------|--------|
-| 13 | One-shot evaluation (13-A6 rules) | — | **Win-rate marks PASSED** (5de7391). Health 3e missed in Gen 4 by one Ditto bug → ruling **13-A7** |
-| 13-R / 13-A7 | Fix the Ditto bug, re-run Gen 4 policy v max-damage on its same indices with a determinism check, then the pass path | No stop if the 13-A7 checks pass | **Done: E3 passes, `cp-06` merged and tagged** (see "Order 13-A7 result") |
-| 14-lite | Hygiene, cut to what v1 needs | No | A8 golden-decision test **done** with `cp-06`; the repo move is the user's, pending |
-| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | Queued |
-| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Queued |
+| 13 | One-shot evaluation (13-A6 rules) | — | **Done, passed** |
+| 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
+| 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
+| 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **Done, approved (ruling 15-R)**, carried out; `cp-07` |
+| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | **In progress** on `task/08-overlay` |
 | 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
@@ -2972,6 +2972,20 @@ Pass path carried out:
   KO chance threshold or "last Pokémon" for self-faint moves.
 - **Gen 1** is the weakest generation (68.7% against max-damage, about level against random). The Gen 1 diagnosis stays v2 item 0.
 
+## Reviewer note: `cp-06` verified (2026-10-14)
+
+**13-A7 was carried out exactly as ruled.**
+- The root cause was a forme-change line while transformed (not abilities), and it is now fixed for Arceus, Giratina and Deoxys, with the 3 games as fixtures.
+- Ground truth is still at 0 false claims.
+- **Determinism: 994 of 994 untouched games are identical in winner, turn count and decision count.**
+- The 3 pairs now play, winning 5 of 6 games.
+
+E3 **passes on every mark, with no quarantine anywhere.** Making the evaluated setting the code default (`utility_scale` 1.5) is correct:
+what ships is what was measured. A8 (the golden-decision test, 8 games, 519 decisions) is in `cp-06`. The reviewer checked `main` = `origin/main` =
+`1446c1d`, tagged `cp-06`. **Phase 6 is complete.**
+
+The next stop is Phase 7's results (Order 15). Order 14-lite is now just: the user's move, then recreate `.venv` and confirm green.
+
 ## ▶ ACTIVE — Orders for Claude Code, batch 9 (written 2026-10-14 while the evaluation runs)
 
 Context: the user wants a demonstrable v1 by **2026-10-16**. To avoid waiting on reviews, the designs below are **decided in
@@ -3126,6 +3140,185 @@ on a **fresh** range 3,000,000–3,000,199, compared with `heuristic-0` on the s
 **Then stop with:** the metric tables, the calibration table, the downstream result, and the 10 most important features. The reviewer
 decides whether the `xgb-1` model becomes the default.
 
+**Downstream range, written before any game was played (2026-10-15): indices 3,000,000–3,000,199, Gens 1–4, policy v max-damage,
+once with `--opponent heuristic-0` and once with `--opponent xgb-1`, same code (`a4c3e63`), same simulator. Used once.**
+
+#### Order 15 result (2026-10-15): **all three pass marks met; the downstream sanity check is flagged** (pooled −1.6 points, lower bound −3.5).
+
+**What was built** (`src/poketrix/opponent/`, on `task/07-opponent-model`):
+- `features.py`: `DecisionView`, 20 features. Stage 5 builds it from stages 2–4 (`stages.opponent_view`) and asks an injected
+  `OpponentModel` (`TurnAdvisor(opponent_model=...)`). The default is still `heuristic-0`, numerically unchanged: the golden decisions pass.
+- `models.py`: `Heuristic` (heuristic-0, now a function of the view) and `XgbModel`. If NumPy (`[ml]`) or the saved files are missing,
+  it raises `ModelUnavailable` and stage 5 answers with heuristic-0 and status `fallback`.
+- `dataset.py`, `training.py`, `evaluation.py`: development tools (`python -m poketrix.opponent.<name>`). The dataset is
+  `data/raw/opponent/decisions.jsonl` (git-ignored); the model is `data/models/opponent-xgb-1.json` plus `.manifest.json`, which holds
+  the battle ids per split, the seed, the features, the search, the temperature and the test metrics.
+- Arena: `run ... --opponent {heuristic-0,xgb-1}`. The report compares two settings of one match game by game.
+- `tests/test_opponent.py` (14 tests): labels, the leakage test (the log cut right after the turn line gives identical features on 4
+  fixture battles), the split, fallback, NumPy trees equal to XGBoost's margins, latency, metric arithmetic. 923 tests pass; `ruff` is clean.
+
+**Data.** Only ladder games (a bare `|rated|` line): 1,273 of the 2,000 replays; 727 tournament or challenge games are left out, and 18
+more have no decision. That leaves 1,255 battles and 71,036 decisions. Every gen is far above 3,000, so nothing more was downloaded.
+The test split is **188 battles** (the power check assumed about 300) with 11,275 decisions (it assumed about 10,000).
+
+| Gen | Battles (train / valid / test) | Decisions | attack | utility | switch | stay |
+|-----|-------------------------------|-----------|--------|---------|--------|------|
+| 1 | 259 / 56 / 55 | 19,621 | 51% | 16% | 14% | 18% |
+| 2 | 93 / 20 / 20 | 10,681 | 44% | 22% | 17% | 16% |
+| 3 | 275 / 59 / 59 | 23,718 | 45% | 25% | 20% | 10% |
+| 4 | 251 / 54 / 54 | 17,016 | 47% | 23% | 18% | 12% |
+
+**Two departures from the spec, both ruled by the user on 2026-10-15 before any test metric was seen:**
+1. **Hidden stays are kept** as a 4th label, `stay`. These are 9,627 decisions where the Pokémon fainted before acting or could not move
+   (asleep, frozen, fully paralysed, flinched, infatuated). It chose a move; the log doesn't show which. Dropping them inflated the switch
+   rate exactly where it matters: when the decider was about to be knocked out (≥ 90%), 27.3% in the kept rows against 20.6% with them,
+   and when asleep, 62.6% against 22.0%. Training splits each one into attack and utility by its gen's visible shares (0.77 / 0.66 / 0.64
+   / 0.67 attack). Scoring: −log(P(attack) + P(utility)) in log-loss. Brier, accuracy and the top-choice ECE use the visible rows only.
+   The switch reliability uses every row.
+2. **No rating feature.** Every ladder game states the ratings, while the model runs where none is known (bots, unrated games). With rating
+   kept and then hidden on the test split, Gen 2 log-loss was 0.897, worse than its base rates (0.866). The model was retrained without it
+   (same grid, seed and split), **so the test split has been read twice**: once with rating, once without.
+
+Also excluded, as the spec lists: locked or two-turn continuations (tagged `[from] lockedmove`, or the same locking move again after
+staying in, since Gen 2 logs don't tag Rollout or Solar Beam), recharge, Truant, being dragged out, and positions the engine refuses
+(transformed, no posterior).
+
+**Model.** XGBoost, multiclass. Validation search: depth 3 / rate 0.05 → 1,375 trees, 0.7223; 3 / 0.1 → 679, 0.7225;
+**5 / 0.05 → 485, 0.7182 (chosen)**; 5 / 0.1 → 278, 0.7201. Temperature 0.969 (validation 0.7182 → 0.7180). Inference walks the saved
+trees with NumPy (equal to XGBoost's margins within 1e-4, tested): **0.28 ms median, 0.60 ms p95** per prediction (XGBoost's own call was
+1.2 / 3.9 ms, over the 2 ms budget).
+
+**Test split, per gen and pooled** (log-loss on every row; Brier, accuracy and ECE on the visible rows):
+
+| Gen | Predictor | Rows | Log-loss | Brier | Accuracy | ECE (top choice) | ECE (switch) |
+|---|---|---|---|---|---|---|---|
+| 1 | base rates | 3,219 | 0.7843 | 0.5455 | 61.8% | 0.0375 | 0.0152 |
+| | heuristic-0 | | 0.7762 | 0.5295 | 55.5% | 0.0660 | 0.0987 |
+| | **xgb-1** | | **0.6138** | 0.4237 | 68.8% | 0.0306 | 0.0104 |
+| 2 | base rates | 2,112 | 0.8663 | 0.5893 | 56.4% | 0.0228 | 0.0099 |
+| | heuristic-0 | | 0.9220 | 0.6355 | 52.8% | 0.1332 | 0.0976 |
+| | **xgb-1** | | **0.8236** | 0.5370 | 60.3% | 0.0495 | 0.0773 |
+| 3 | base rates | 3,794 | 0.9743 | 0.6366 | 47.6% | 0.0387 | 0.0072 |
+| | heuristic-0 | | 0.9625 | 0.6214 | 47.9% | 0.0854 | 0.1181 |
+| | **xgb-1** | | **0.8169** | 0.5270 | 59.3% | 0.0219 | 0.0187 |
+| 4 | base rates | 2,150 | 0.9019 | 0.5912 | 56.3% | 0.0156 | 0.0064 |
+| | heuristic-0 | | 0.8708 | 0.5664 | 53.2% | 0.0742 | 0.1112 |
+| | **xgb-1** | | **0.7320** | 0.4736 | 63.8% | 0.0112 | 0.0199 |
+| all | base rates | 11,275 | 0.8860 | 0.5945 | 54.7% | 0.0165 | 0.0025 |
+| | heuristic-0 | | 0.8842 | 0.5885 | 51.9% | 0.0577 | 0.1074 |
+| | **xgb-1** | | **0.7440** | 0.4906 | 62.9% | **0.0157** | 0.0147 |
+
+Log-loss improvement of xgb-1, battle bootstrap (2,000 resamples, seed 20261502):
+
+| Gen | Over base rates | Over heuristic-0 |
+|---|---|---|
+| 1 | +0.171 (+0.150 to +0.190) | +0.162 (+0.137 to +0.188) |
+| 2 | +0.043 (−0.081 to +0.159) | +0.098 (−0.013 to +0.211) |
+| 3 | +0.157 (+0.136 to +0.179) | +0.146 (+0.117 to +0.174) |
+| 4 | +0.170 (+0.147 to +0.193) | +0.139 (+0.114 to +0.162) |
+| **all** | **+0.142 (+0.102 to +0.170)** | **+0.140 (+0.107 to +0.166)** |
+
+Reliability of xgb-1 on the pooled test split:
+
+| Bin | Top choice: rows | predicted | observed | P(switch): rows | predicted | observed |
+|---|---|---|---|---|---|---|
+| 0.0–0.1 | | | | 4,265 | 0.047 | 0.051 |
+| 0.1–0.2 | | | | 3,093 | 0.145 | 0.141 |
+| 0.2–0.3 | | | | 1,727 | 0.244 | 0.239 |
+| 0.3–0.4 | 326 | 0.375 | 0.383 | 930 | 0.345 | 0.308 |
+| 0.4–0.5 | 1,842 | 0.457 | 0.462 | 563 | 0.445 | 0.442 |
+| 0.5–0.6 | 2,235 | 0.550 | 0.549 | 305 | 0.546 | 0.561 |
+| 0.6–0.7 | 1,866 | 0.647 | 0.648 | 193 | 0.643 | 0.632 |
+| 0.7–0.8 | 1,503 | 0.748 | 0.703 | 86 | 0.743 | 0.523 |
+| 0.8–0.9 | 1,281 | 0.849 | 0.816 | 69 | 0.849 | 0.348 |
+| 0.9–1.0 | 665 | 0.939 | 0.899 | 44 | 0.949 | 0.273 |
+
+| Pass mark | Result |
+|---|---|
+| 1. Pooled log-loss gain over **both** baselines, bootstrap lower bound > 0 | **Pass**: +0.102 over base rates, +0.107 over heuristic-0 |
+| 2. Pooled ECE ≤ 0.03 after calibration | **Pass**: 0.0157 (top choice); 0.0147 for P(switch) |
+| 3. Per gen, log-loss not worse than base rates | **Pass**: 0.614 < 0.784; 0.824 < 0.866; 0.817 < 0.974; 0.732 < 0.902 |
+
+**Downstream check (2026-10-15), indices 3,000,000–3,000,199, policy v max-damage, 1,600 games per model, 0 quarantined, 0 illegal,
+0 errors: ⚑ FLAGGED. The pooled lower bound, −3.5 points, is below −3.** This is a sanity check, not a pass mark.
+
+| Gen | heuristic-0 | xgb-1 | Only xgb-1 won / only heuristic-0 won | Paired difference (95%) |
+|---|---|---|---|---|
+| 1 | 65.2% | 59.0% | 21 / 46 | **−6.2 (−10.2 to −2.3)** |
+| 2 | 80.2% | 79.8% | 33 / 35 | −0.5 (−4.5 to +3.5) |
+| 3 | 78.8% | 81.2% | 32 / 22 | +2.5 (−1.1 to +6.1) |
+| 4 | 84.5% | 82.2% | 18 / 27 | −2.2 (−5.5 to +1.0) |
+| **all** | **77.2%** | **75.6%** | 104 / 130 | **−1.6 (−3.5 to +0.2)** |
+
+Other differences with xgb-1: self-KO moves advised 198 against 125 (Gen 1: 79 against 53; Gen 2: 62 against 34); voluntary switches
+13.0% against 12.7%; p95 latency 49.7 ms against 48.1 ms; `fallback` 2.62% against 2.71%. The loss is concentrated in Gen 1, where
+xgb-1 is the best predictor of people (log-loss 0.614 against 0.776). This is the case the spec warned about: a better model of humans
+playing against a bot. The policy only reads `p_attack` (the `a` in its formula), and xgb-1's `a` is calibrated on ladder players, not on
+max-damage, which attacks every turn. **Recommendation: keep heuristic-0 as the turn engine's default; ship xgb-1 for the overlay's
+opponent read (human opponents), and judge it there.** The reviewer decides.
+
+Ten most important features (total gain): `alive` 14.5, `damaging_share` 13.8, `best_share` 10.2, `boosts` 7.4, `generation` 7.1,
+`moves_first` 7.0, `best_ko` 6.7, `target_boosts` 6.6, `target_status` 5.8, `target_best_share` 4.4.
+
+**Known limits.**
+- Gen 2 is the weak spot: only 93 training battles, its gain interval crosses 0, and switch ECE is 0.077.
+- P(switch) above 0.7 is overconfident: 199 rows predicted 0.85 on average, observed 0.40. The top choice and the pooled ECE are fine.
+- `damaging_share` (posterior share of damaging moves) is a feature the spec did not list. Heuristic-0 needs it, so every row must carry it
+  for heuristic-0 to be scored. It only uses what is visible at decision time.
+- Training rows give the decider's opponent its most likely set (a spectator log shows neither set). In a game, the owner knows the real set.
+
+## Reviewer ruling 15-R (2026-10-15): Phase 7 approved
+
+1. **Approved:** xgb-1 meets all three pass marks. The downstream flag is the expected effect of a model of humans playing against bots.
+2. **Option A:** the policy keeps heuristic-0 as its opponent model everywhere, the overlay included, because that is the version `cp-06`
+   validated. xgb-1 is information only: a separate line, "Opponent tendency: switch X% · attack Y% · utility Z%", in the overlay
+   and in `analyze`. Feeding xgb-1 into the policy is v2, after a human trial.
+3. **P(switch) tail fix before display** (rows predicted near 0.85 switched only 40% of the time):
+   - refit per-class isotonic calibration by cross-fitting (5 folds by battle) on train + validation battles only, never reading the
+     test split again;
+   - report the cross-fitted reliability table;
+   - until the tail bins hold within ±0.10, display switch odds above 0.70 as "70%+".
+4. **Writer:** any recommendation of a self-faint move must say "sacrifices your Pokémon". Text only, no policy change; the
+   golden-decision test must still pass.
+5. **Accepted as reported:** the NumPy tree walk, the `damaging_share` feature, the removal of the rating feature, and the test split
+   being read twice (recorded).
+6. **Added to the v2 list:** more Gen 2 data (93 training battles), the self-KO audit (now urgent), and xgb-1 inside the policy after a
+   human trial.
+7. Then merge `--no-ff`, tag `cp-07`, push, update the Current orders table, and start Order 16 as specified: xgb-1 shown as the
+   "opponent tendency" line, the fair-play guard kept, and a stop with a demo (screenshots and latency numbers).
+
+#### Ruling 15-R carried out (2026-10-15)
+
+| Item | Done |
+|---|---|
+| Option A | The policy keeps heuristic-0 everywhere (unchanged default). `advisor/tendency.py` rebuilds stage 5's view from the turn's report and asks xgb-1; `analyze` prints "Opponent tendency: switch X% · attack Y% · utility Z%". No schema change |
+| Tail fix | `opponent/calibration.py`: cross-fitted on train + valid only (59,761 decisions, 1,067 battles, 5 folds by battle, seed 20261503); **the test split was not read**. Two isotonic maps, one for P(switch) on every row and one for the attack share of the rest on visible rows, so the three odds always sum to 1. Stored in the manifest as `display_calibration`; `XgbModel.predict` applies them |
+| Cap | **Kept: switch odds above 70% are shown as "70%+".** After the maps, the 0.8–0.9 bin is 0.826 against 0.690 (29 rows) and the 0.9–1.0 bin is 0.975 against 0.600 (5 rows) |
+| Writer | A self-faint move's advice begins "<Move> sacrifices your Pokémon: <ours> faints." Golden decisions pass |
+| Tests | 928 pass (+5: the tendency line and cap, the tendency equals stage 5's view, the isotonic fit, `analyze`, the sacrifice text); `ruff` is clean |
+
+Cross-fitted reliability of P(switch), every row (out of fold; "with maps" = maps fitted on the other four folds):
+
+| Bin | Rows before | Predicted | Observed | Rows with maps | Predicted | Observed |
+|---|---|---|---|---|---|---|
+| 0.0–0.1 | 22,589 | 0.048 | 0.044 | 23,335 | 0.046 | 0.046 |
+| 0.1–0.2 | 17,011 | 0.146 | 0.149 | 14,768 | 0.146 | 0.146 |
+| 0.2–0.3 | 9,574 | 0.245 | 0.251 | 11,113 | 0.245 | 0.243 |
+| 0.3–0.4 | 5,213 | 0.345 | 0.356 | 4,777 | 0.351 | 0.353 |
+| 0.4–0.5 | 2,843 | 0.444 | 0.459 | 2,754 | 0.442 | 0.441 |
+| 0.5–0.6 | 1,540 | 0.544 | 0.552 | 1,851 | 0.544 | 0.541 |
+| 0.6–0.7 | 760 | 0.642 | 0.638 | 880 | 0.635 | 0.637 |
+| 0.7–0.8 | 175 | 0.741 | 0.754 | 249 | 0.742 | 0.727 |
+| 0.8–0.9 | 52 | 0.836 | 0.788 | 29 | 0.826 | **0.690** |
+| 0.9–1.0 | 4 | 0.916 | 0.500 | 5 | 0.975 | **0.600** |
+
+ECE of P(switch): 0.0055 before, 0.0013 with the maps. Top choice on visible rows: 0.0054 before, 0.0105 with them (both well inside 0.03).
+
+**For the reviewer:** out of fold, the trees were already close in the tail (0.836 against 0.788 over 52 rows). The test split's 0.85 → 0.40
+is not reproduced on train + valid, which points to those 188 test battles rather than the model. The maps change little, and only the
+two sparsest bins (34 rows in all) keep the cap on. Note: I first set a 30-row minimum per bin, which would have lifted the cap on a
+29-row bin. I removed it before anything was committed: the ruling says the tail bins must hold, and the cap stays.
+
 ### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
 Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
 
@@ -3153,6 +3346,8 @@ Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. I
 2. Tag `v1.0` on `main` once Orders 15 and 16 are approved and merged (`cp-07`, `cp-08`).
 3. **The v2 list** in this file: the Gen 1 diagnosis, priority moves, recoil and recharge, set-up moves, an independent baseline, a human trial,
    `utility_scale` > 1.5, logbook archiving, the dex field, exact desync detection, timing on AC, and Gen 5+.
+   Added by ruling 15-R: more Gen 2 data (93 training battles), **the self-KO audit (urgent)**, and xgb-1 inside the policy after a
+   human trial.
 
 ## Standing rule added: the autonomy envelope (2026-10-13)
 

@@ -8,8 +8,9 @@ from collections.abc import Mapping
 from poketrix.calc import acts_first_chance, evaluate_move, expected_hp_share
 from poketrix.calc.stats import battle_stats, current_hp
 from poketrix.dex import UnknownDexEntryError
+from poketrix.opponent import DecisionView, Heuristic, ModelUnavailable, OpponentModel
+from poketrix.opponent.features import MISSING, hazard_layers, healthy_bench, status_code
 from poketrix.schemas import (
-    ActionPrediction,
     BattlePokemon,
     MoveCategory,
     MoveOutlook,
@@ -19,6 +20,7 @@ from poketrix.schemas import (
     SetPosterior,
     Stat,
     SubsystemStatus,
+    ThreatReport,
     ThreatSheet,
 )
 from poketrix.uncloak import Uncloaker, threat_report
@@ -27,9 +29,7 @@ from .situation import Deadline, Situation
 
 OK, FALLBACK, TIMEOUT = SubsystemStatus.OK, SubsystemStatus.FALLBACK, SubsystemStatus.TIMEOUT
 Numbers = dict[str, float]
-# heuristic-0: placeholders until the Phase 7 predictor replaces them.
-HEURISTIC_VERSION = "heuristic-0"
-_SWITCH_BASE, _SWITCH_PER_KO, _SWITCH_MIN, _SWITCH_MAX = 0.10, 0.40, 0.05, 0.60
+HEURISTIC = Heuristic()  # what stage 5 uses when its model cannot run
 
 
 def _out_of_time(done: int, total: int) -> tuple[SubsystemStatus, str | None]:
@@ -177,27 +177,53 @@ def read_order(
     return sheet, OK, None
 
 
-def predict_opponent(
-    situation: Situation, posterior: SetPosterior, outlooks: list[MoveOutlook],
-    numbers: Numbers,
-):
-    """Stage 5: attack, switch or utility. A rule of thumb: the likelier we are to knock their
-    Pokémon out, the likelier it leaves, if it has somewhere to go."""
-    best_ko = max((outlook.ko_probability or 0.0 for outlook in outlooks), default=0.0)
-    p_switch = 0.0
-    if situation.them.alive_count > 1:
-        p_switch = min(_SWITCH_MAX, max(_SWITCH_MIN, _SWITCH_BASE + _SWITCH_PER_KO * best_ko))
-    prediction = ActionPrediction(
-        p_switch=p_switch, model_version=HEURISTIC_VERSION,
-        **_attack_or_utility(1 - p_switch, _damaging_share(situation, posterior)),
+def opponent_view(
+    situation: Situation, posterior: SetPosterior, threat: ThreatReport | None,
+    outlooks: list[MoveOutlook], first: Mapping[str, float],
+) -> DecisionView:
+    """Their decision as we see it: the state, and what stages 2 to 4 found for the two
+    Pokémon now facing each other (`threat` and `outlooks` are for our active one)."""
+    me, them, ours, theirs = situation.me, situation.them, situation.ours, situation.theirs
+    hardest = max((outlook for outlook in outlooks if outlook.expected_share is not None),
+                  key=lambda outlook: outlook.expected_share, default=None)
+    return DecisionView(
+        generation=int(situation.state.generation), turn=situation.snapshot.turn,
+        hp=theirs.hp_fraction, target_hp=ours.hp_fraction,
+        status=status_code(theirs.status), target_status=status_code(ours.status),
+        boosts=sum(theirs.boosts.values()), target_boosts=sum(ours.boosts.values()),
+        alive=them.alive_count, target_alive=me.alive_count,
+        healthy_bench=healthy_bench(them), target_healthy_bench=healthy_bench(me),
+        best_ko=MISSING if threat is None else threat.p_ko_best_move,
+        best_share=MISSING if threat is None else threat.expected_best_share,
+        target_best_ko=max((outlook.ko_probability or 0.0 for outlook in outlooks), default=0.0),
+        target_best_share=MISSING if hardest is None else hardest.expected_share,
+        moves_first=(1 - first[hardest.move_id]
+                     if hardest and hardest.move_id in first else MISSING),
+        hazards=hazard_layers(them),
+        status_move_revealed=float(
+            any(_is_status(situation, move) for move in theirs.revealed_moves)
+        ),
+        damaging_share=_damaging_share(situation, posterior),
     )
+
+
+def predict_opponent(view: DecisionView, model: OpponentModel, numbers: Numbers):
+    """Stage 5: attack, utility or switch. A model that cannot run here (its dependency or
+    its files are missing) is replaced by the rule of thumb, and the stage says so."""
+    try:
+        prediction, status, problem = model.predict(view), OK, None
+    except ModelUnavailable as error:
+        prediction, status, problem = HEURISTIC.predict(view), FALLBACK, str(error)
     numbers["opponent.p_switch"] = prediction.p_switch
     numbers["opponent.p_attack"] = prediction.p_attack
-    return prediction, OK, None
+    return prediction, status, problem
 
 
-def _attack_or_utility(staying: float, damaging: float) -> Mapping[str, float]:
-    return {"p_attack": staying * damaging, "p_utility": staying * (1 - damaging)}
+def _is_status(situation: Situation, move_id: str) -> bool:
+    try:
+        return situation.dex.move(move_id).category is MoveCategory.STATUS
+    except UnknownDexEntryError:
+        return False
 
 
 def _damaging_share(situation: Situation, posterior: SetPosterior) -> float:

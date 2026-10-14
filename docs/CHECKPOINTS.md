@@ -33,3 +33,4 @@ Rule: **`main` always works.** A stuck phase never damages finished progress.
 | cp-05 | Showdown battle-log parser: spectator and player mode, evidence rules, staleness measurement (completes Phase 5) | 2026-10-13 | 846 passed (+8 timing) |
 | cp-05b | Prior rebuilt from Showdown's current source (commit `942cda7`); ladder staleness 0 in every generation | 2026-10-13 | 847 passed |
 | cp-06 | Turn engine: stages, score-based policy, templates and guardrail, simulator harness; evaluated at 77.4% against max-damage over 4,000 paired games (completes Phase 6) | 2026-10-14 | 910 passed |
+| cp-07 | Opponent model xgb-1 (Phase 7): real-replay decision dataset, XGBoost with NumPy inference, display calibration; shown as "opponent tendency", the policy keeps heuristic-0 (ruling 15-R) | 2026-10-15 | 928 passed |

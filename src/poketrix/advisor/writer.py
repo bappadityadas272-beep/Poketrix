@@ -10,10 +10,11 @@ from typing import Protocol
 from poketrix.dex import UnknownDexEntryError
 from poketrix.schemas import ActionKind, Decision, Recommendation
 
-from .policy import TRAP_NAMES_A_MOVE
+from .policy import SELF_FAINT, TRAP_NAMES_A_MOVE
 from .situation import Situation
 
 NO_NUMBERS = "No further numbers are available for this decision."
+SACRIFICE = "sacrifices your Pokémon"  # ruling 15-R: said whenever a self-faint move is advised
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,7 @@ class TemplateWriter:
         move = self._move_name(situation, move_id)
         share = quotes.pct(f"our.{index}.{move_id}.share")
         ko = quotes.pct(f"our.{index}.{move_id}.ko")
-        sentences = []
+        sentences = [f"{move} {SACRIFICE}: {ours} faints."] if move_id in SELF_FAINT else []
         if share is not None and ko is not None:
             sentences.append(f"{move} removes about {share} of {theirs}'s remaining HP on "
                              f"average and knocks it out {ko} of the time.")

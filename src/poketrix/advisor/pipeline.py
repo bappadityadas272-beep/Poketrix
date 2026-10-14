@@ -12,6 +12,7 @@ from time import perf_counter
 from pydantic import BaseModel, ValidationError
 
 from poketrix.dex import Dex
+from poketrix.opponent import OpponentModel
 from poketrix.schemas import (
     ActionPrediction,
     Decision,
@@ -58,8 +59,10 @@ class TurnAdvisor:
         clock: Callable[[], float] = perf_counter,
         budget_ms: float = TURN_BUDGET_MS,
         settings: PolicySettings = DEFAULT_SETTINGS,
+        opponent_model: OpponentModel = stages.HEURISTIC,
     ) -> None:
         self._settings = settings
+        self._opponent_model = opponent_model
         self._writer = writer or TemplateWriter()
         self._priors = priors
         self._clock = clock
@@ -106,11 +109,16 @@ class TurnAdvisor:
             offence=offence.payload.by_attacker if offence.payload else {},
             first=order.payload.first if order.payload else {},
         )
+        active = situation.me.active_index
         opponent = run(
             "opponent", ActionPrediction,
             (lambda d: (THEY_ATTACK, SubsystemStatus.FALLBACK, blocked)) if blocked
             else lambda d: stages.predict_opponent(
-                situation, posterior, inputs.offence.get(situation.me.active_index, []), numbers
+                stages.opponent_view(
+                    situation, posterior, inputs.threats.get(active),
+                    inputs.offence.get(active, []), inputs.first.get(active, {}),
+                ),
+                self._opponent_model, numbers,
             ),
         )
         inputs.opponent = opponent.payload or THEY_ATTACK

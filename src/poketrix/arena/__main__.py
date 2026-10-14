@@ -1,6 +1,7 @@
 """Runs paired simulator games and reports win rates.
 
     python -m poketrix.arena run policy-maxdamage --first 2000000 --pairs 500 --out eval.jsonl
+        [--opponent xgb-1]     the opponent model the policy plays with (default heuristic-0)
     python -m poketrix.arena report eval.jsonl [more.jsonl ...]
     python -m poketrix.arena record          re-record the golden games (see golden.py)
 
@@ -26,6 +27,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from poketrix.advisor import PolicySettings
+from poketrix.opponent import MODELS, Heuristic
 
 from .golden import GOLDEN_FILE, record
 from .play import Bridge, GameResult, MaxDamagePlayer, Player, PolicyPlayer
@@ -44,15 +46,15 @@ def cache_dir() -> Path:
     return Path.home() / ".cache" / "poketrix"
 
 
-def _players(match: str, settings: PolicySettings) -> dict[str, Player | None]:
-    makers = {"policy": lambda: PolicyPlayer(settings), "maxdamage": MaxDamagePlayer,
-              "random": lambda: None}
+def _players(match: str, settings: PolicySettings, opponent: str) -> dict[str, Player | None]:
+    makers = {"policy": lambda: PolicyPlayer(settings, MODELS[opponent]()),
+              "maxdamage": MaxDamagePlayer, "random": lambda: None}
     first, second = match.split("-")
     return {"p1": makers[first](), "p2": makers[second]()}
 
 
-def _line(match: str, settings: PolicySettings, result: GameResult) -> dict:
-    line = {"match": match, "settings": asdict(settings), "gen": result.gen,
+def _line(match: str, settings: dict, result: GameResult) -> dict:
+    line = {"match": match, "settings": settings, "gen": result.gen,
             "index": result.index, "swap": result.swap, "winner": result.winner,
             "turns": result.turns}
     for side, tally in result.sides.items():
@@ -68,7 +70,7 @@ def _line(match: str, settings: PolicySettings, result: GameResult) -> dict:
 
 
 def run(match: str, gens: list[int], first: int, pairs: int, out: Path,
-        settings: PolicySettings) -> None:
+        settings: PolicySettings, opponent: str = Heuristic.version) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     seen: dict[tuple[int, int], int] = {}  # (gen, index) -> lines already written for the pair
     if out.exists():
@@ -76,20 +78,23 @@ def run(match: str, gens: list[int], first: int, pairs: int, out: Path,
             game = json.loads(text)
             key = (game["gen"], game["index"])
             seen[key] = 2 if game.get("quarantined") else seen.get(key, 0) + 1
-    players = _players(match, settings)
+    players = _players(match, settings, opponent)
+    # What the policy played with: the report keeps runs with different settings apart.
+    described = asdict(settings) | {"opponent": opponent}
     bridge = Bridge()
-    print(f"{match} with {settings}; simulator {bridge.simulator}; results in {out}", flush=True)
+    print(f"{match} with {described}; simulator {bridge.simulator}; results in {out}", flush=True)
     with out.open("a", encoding="utf-8", newline="\n") as file:
         for gen in gens:
             for index in range(first, first + pairs):
                 if seen.get((gen, index), 0) >= 2:
                     continue
-                pair = {"match": match, "settings": asdict(settings), "gen": gen, "index": index}
+                pair = {"match": match, "settings": described, "gen": gen, "index": index}
                 swap = False
                 try:  # both games or neither: half a pair would bias the result
                     lines = []
                     for swap in (False, True):
-                        lines.append(_line(match, settings, bridge.play(gen, index, swap, players)))
+                        result = bridge.play(gen, index, swap, players)
+                        lines.append(_line(match, described, result))
                 except Exception:  # noqa: BLE001 - 13-A3: record it, drop the pair, carry on
                     _quarantine(pair | {"swap": swap}, bridge.log)
                     lines = [pair | {"quarantined": True}]
@@ -127,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--gamma", type=float, default=defaults.gamma)
     play.add_argument("--a-floor", type=float, default=defaults.a_floor)
     play.add_argument("--utility-scale", type=float, default=defaults.utility_scale)
+    play.add_argument("--opponent", choices=sorted(MODELS), default=Heuristic.version)
     show = commands.add_parser("report", help="win rates from result files")
     show.add_argument("files", type=Path, nargs="+")
     commands.add_parser("record", help="re-record the golden games with the default policy")
@@ -140,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "run":
         settings = PolicySettings(gamma=args.gamma, a_floor=args.a_floor,
                                   utility_scale=args.utility_scale)
-        run(args.match, args.gens, args.first, args.pairs, placed(args.out), settings)
+        run(args.match, args.gens, args.first, args.pairs, placed(args.out), settings,
+            args.opponent)
     else:
         sys.stdout.reconfigure(encoding="utf-8")
         print_report([placed(path) for path in args.files])
