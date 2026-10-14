@@ -23,6 +23,7 @@ function section(title, items) {
 function render(shown, state) {
   advice.replaceChildren();
   mode.textContent = "";
+  timing.textContent = "";
   if (shown.status !== "ok") {
     advice.append(element("p", shown.message, shown.status === "rated" ? "off" : "quiet"));
     return;

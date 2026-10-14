@@ -5,7 +5,11 @@ per decision, carrying the request; a battle watched or replayed gives one per t
 advised from p1's side (`advisor.spectator`).
 
 Fair play, enforced here: a live battle that is rated (the protocol's `|rated|` line) gets no
-advice at all. Replays are exempt; they are over.
+advice at all. Replays are exempt; they are over. The rated line is looked for before anything
+is parsed, so a battle the parser cannot read is still recognised as rated.
+
+A battle outside the scope (Gen 5+, doubles, anything the parser refuses) is marked out of
+scope and read no further; the server answers as usual.
 """
 
 from dataclasses import dataclass, field
@@ -23,6 +27,7 @@ from poketrix.uncloak import load_prior
 from .panel import panel
 
 RATED_MESSAGE = "Poketrix is off in rated battles"
+OUT_OF_SCOPE = "Poketrix reads Gen 1–4 singles battles only"
 DEMO_SIDE = PlayerSlot.P1  # a watched battle or a replay is advised from p1's side
 
 
@@ -36,6 +41,7 @@ class Room:
     source: Source
     reader: BattleReader = field(default_factory=BattleReader)
     rated: bool = False
+    unreadable: str | None = None  # why the parser stopped, for a battle outside the scope
     snapshots: list[TurnSnapshot] = field(default_factory=list)
     advice: dict[int, dict] = field(default_factory=dict)  # snapshot position -> panel
     lock: Lock = field(default_factory=Lock)
@@ -60,10 +66,15 @@ class Rooms:
         with self._lock:
             room = self._rooms.setdefault(room_id, Room(source))
         with room.lock:
+            room.rated = room.rated or any(line.startswith("|rated|") for line in lines)
             for line in lines:
-                if line.startswith("|rated|"):
-                    room.rated = True
-                found = room.reader.feed(line)
+                if room.unreadable is not None:
+                    break
+                try:
+                    found = room.reader.feed(line)
+                except Exception as error:  # noqa: BLE001 - rule 3: the room stops, not the server
+                    room.unreadable = f"{type(error).__name__}: {error}"
+                    break
                 if found is not None:
                     room.snapshots.append(found)
             if room.source is Source.LIVE and not room.off and room.snapshots:
@@ -77,6 +88,8 @@ class Rooms:
         """The panel for a turn (a replay), or for the newest decision."""
         if room.off:
             return {"status": "rated", "message": RATED_MESSAGE}
+        if room.unreadable is not None:
+            return {"status": "unsupported", "message": f"{OUT_OF_SCOPE} ({room.unreadable})"}
         with room.lock:
             positions = [i for i, s in enumerate(room.snapshots)
                          if turn is None or (s.turn == turn and s.decision_index == 0)]
