@@ -3140,6 +3140,9 @@ on a **fresh** range 3,000,000–3,000,199, compared with `heuristic-0` on the s
 **Then stop with:** the metric tables, the calibration table, the downstream result, and the 10 most important features. The reviewer
 decides whether the `xgb-1` model becomes the default.
 
+**Downstream range, written before any game was played (2026-10-15): indices 3,000,000–3,000,199, Gens 1–4, policy v max-damage,
+once with `--opponent heuristic-0` and once with `--opponent xgb-1`, same code (`a4c3e63`), same simulator. Used once.**
+
 ### Order 16: Phase 8, the overlay MVP. **Build directly. STOP with a demo.**
 Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. It never sends a choice and never touches credentials.
 
