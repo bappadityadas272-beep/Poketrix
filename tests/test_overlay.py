@@ -12,7 +12,7 @@ import pytest
 from poketrix.advisor import TurnAdvisor
 from poketrix.advisor.tendency import tendency_line
 from poketrix.opponent import Heuristic
-from poketrix.overlay.rooms import RATED_MESSAGE, Rooms
+from poketrix.overlay.rooms import OUT_OF_SCOPE, RATED_MESSAGE, Rooms
 from poketrix.overlay.server import HOST, OverlayServer
 from poketrix.showdown import parse_battle
 from poketrix.showdown.validation import load_battles
@@ -88,3 +88,16 @@ def test_bad_requests_are_refused(server):
     with pytest.raises(HTTPError) as bad_turn:
         _get(server, "room=battle-empty&turn=x")
     assert bad_turn.value.code == 400
+
+
+def test_a_battle_out_of_scope_is_answered_and_a_rated_one_stays_off(server):
+    """Found in the demo: a Gen 9 battle being watched made the server drop the connection
+    before it reached the `|rated|` line, and the panel said the server was not running."""
+    header = ["|init|battle", "|player|p1|A|1|1500", "|player|p2|B|2|1500", "|gen|9",
+              "|tier|[Gen 9] Random Battle"]
+    _post(server, {"room": "battle-gen9-rated", "lines": [*header, "|rated|", "|start"]})
+    assert _get(server, "room=battle-gen9-rated") == {"status": "rated", "message": RATED_MESSAGE}
+    _post(server, {"room": "battle-gen9-unrated", "lines": [*header, "|start"]})
+    _post(server, {"room": "battle-gen9-unrated", "lines": ["|turn|1"]})  # read no further
+    shown = _get(server, "room=battle-gen9-unrated")
+    assert shown["status"] == "unsupported" and shown["message"].startswith(OUT_OF_SCOPE)
