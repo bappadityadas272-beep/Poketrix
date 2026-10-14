@@ -3364,14 +3364,14 @@ is off in rated battles".
 
 | # | Step | Expected | Result |
 |---|------|----------|--------|
-| 1 | Load `extension/` unpacked; the server is running | The extension loads with no errors | |
-| 2 | Open a replay on `replay.pokemonshowdown.com`, click the Poketrix button | The panel shows p1's advice; the turn follows the replay as it plays | |
+| 1 | Load `extension/` unpacked; the server is running | The extension loads with no errors | **Pass** (2026-10-14, the user's Chrome) |
+| 2 | Open a replay on `replay.pokemonshowdown.com`, click the Poketrix button | The panel shows p1's advice; the turn follows the replay as it plays | **Pass.** Gen 4 replay, turn 5: the same advice the server gave in the scripted check, with every panel part present. Screenshot: `docs/demo/replay.png` (cropped to the panel) |
 | 3 | Stop the server and reload | "The Poketrix server is not running" | |
-| 4 | An unrated challenge or a random battle against a friend on `play.pokemonshowdown.com` | Player-mode advice at each decision | |
-| 5 | Watch a **rated** live battle | "Poketrix is off in rated battles" | |
-| 6 | Panel footer | "shown N ms after the line arrived" under 300 ms | |
+| 4 | An unrated challenge or a random battle against a friend on `play.pokemonshowdown.com` | Player-mode advice at each decision | Skipped by the user: **not tested**, see known limits |
+| 5 | Watch a **rated** live battle | "Poketrix is off in rated battles" | **Bug found, fixed (`4cf79ab`), recheck pending.** The battle watched was Gen 9: the parser raised on `|gen|9` inside the request, before the `|rated|` line, and the panel said "server not running". Now `|rated|` is looked for before parsing, and an unreadable battle is answered as out of scope. Regression test added |
+| 6 | Panel footer | "shown N ms after the line arrived" under 300 ms | **Pass:** engine 13 ms, shown 23 ms after the line arrived. The stale footer seen on the error message is fixed |
 
-**Known limits.** The live-client hook (step 4) could not be tested here: it needs the user's own game. It listens to the client's
+**Known limits.** The live-client hook (step 4) was not tested: it needs a live game, and the user skipped it in the demo. It listens to the client's
 WebSocket, plain or SockJS frames. In demo mode p1's sets are the likeliest ones under the evidence, not the real ones. The replay turn
 is read from the page's "Turn N" counter; if the page changes, the panel shows turn 1. The port is fixed at 8765 because the manifest
 names it.
