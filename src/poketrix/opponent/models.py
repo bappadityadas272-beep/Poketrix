@@ -1,8 +1,9 @@
 """Opponent-action models: a `DecisionView` in, the chance of attack, utility and switch out.
 
 `Heuristic` is heuristic-0, a rule of thumb that needs nothing installed. `XgbModel` is the
-learned model (Phase 7); it needs the optional `ml` dependencies and its saved files, and says
-so with `ModelUnavailable` when they are missing, so that the turn engine can fall back.
+learned model (Phase 7); it needs NumPy (from the optional `ml` dependencies) and its saved
+files, and says so with `ModelUnavailable` when they are missing, so that the turn engine can
+fall back.
 """
 
 import json
@@ -55,30 +56,61 @@ def model_paths(version: str, directory: Path = MODEL_DIR) -> tuple[Path, Path]:
 
 
 class XgbModel:
-    """Gradient-boosted trees over the feature vector, calibrated by one temperature."""
+    """Gradient-boosted trees over the feature vector, calibrated by one temperature.
+
+    The trees are read from XGBoost's saved JSON and walked here, all at once with NumPy:
+    the same margins as XGBoost's own prediction (a test compares them), at a fraction of its
+    per-call cost. Running it needs NumPy only; training it needs XGBoost.
+    """
 
     def __init__(self, version: str = "xgb-1", directory: Path = MODEL_DIR) -> None:
         self.version = version
-        self._booster = None
         self._temperature = 1.0
         self._problem = self._load(*model_paths(version, directory))
 
     def _load(self, model_file: Path, manifest_file: Path) -> str | None:
         """Read the saved model. Returns why it cannot be used, or None when it can."""
         try:
-            import xgboost
+            import numpy
         except ImportError:
-            return 'xgboost is not installed: pip install -e ".[ml]"'
+            return 'numpy is not installed: pip install -e ".[ml]"'
         try:
             manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-            booster = xgboost.Booster(model_file=model_file)
-        except (OSError, ValueError, xgboost.core.XGBoostError) as error:
+            saved = json.loads(model_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
             return f"{self.version} could not be read: {error}"
         if tuple(manifest["features"]) != FEATURES or tuple(manifest["actions"]) != ACTIONS:
             return f"{self.version} was trained on other features: train it again"
-        booster.set_param({"nthread": 1})  # one row at a time: threads only add overhead
-        self._booster, self._temperature = booster, manifest["temperature"]
+        self._temperature = manifest["temperature"]
+        self._levels = manifest["params"]["max_depth"]
+        self._read_trees(numpy, saved["learner"])
         return None
+
+    def _read_trees(self, numpy, learner: dict) -> None:
+        """One flat array per node property. A leaf leads back to itself, so every row can
+        take the same number of steps down every tree."""
+        booster = learner["gradient_booster"]["model"]
+        trees = booster["trees"]
+        width = max(len(tree["left_children"]) for tree in trees)
+        size = len(trees) * width
+        self._feature = numpy.zeros(size, numpy.int64)
+        self._threshold = numpy.zeros(size, numpy.float32)  # a leaf's value, at a leaf
+        self._missing_left = numpy.zeros(size, bool)
+        self._child = numpy.zeros((size, 2), numpy.int64)  # [right, left]
+        for number, tree in enumerate(trees):
+            offset = number * width
+            for node, left in enumerate(tree["left_children"]):
+                at = offset + node
+                self._threshold[at] = tree["split_conditions"][node]
+                if left == -1:
+                    self._child[at] = (at, at)
+                else:
+                    self._child[at] = (offset + tree["right_children"][node], offset + left)
+                    self._feature[at] = tree["split_indices"][node]
+                    self._missing_left[at] = tree["default_left"][node]
+        self._roots = numpy.arange(len(trees)) * width
+        self._tree_class = numpy.array(booster["tree_info"])
+        self._base = numpy.array(json.loads(learner["learner_model_param"]["base_score"]))
 
     def margins(self, rows):
         """The trees' raw scores, one row per decision and one column per action."""
@@ -86,8 +118,18 @@ class XgbModel:
 
         if self._problem is not None:
             raise ModelUnavailable(self._problem)
-        matrix = numpy.asarray(rows, dtype=numpy.float32)
-        return self._booster.inplace_predict(matrix, predict_type="margin")
+        x = numpy.asarray(rows, dtype=numpy.float32)
+        missing = numpy.isnan(x)
+        row = numpy.arange(len(x))[:, None]
+        node = numpy.broadcast_to(self._roots, (len(x), len(self._roots)))
+        for _ in range(self._levels):
+            feature = self._feature[node]
+            left = (x[row, feature] < self._threshold[node]) | (
+                missing[row, feature] & self._missing_left[node])
+            node = self._child[node, left.astype(numpy.int64)]
+        leaves = self._threshold[node]
+        return numpy.stack([leaves[:, self._tree_class == action].sum(axis=1)
+                            for action in range(len(ACTIONS))], axis=1) + self._base
 
     def predict(self, view: DecisionView) -> ActionPrediction:
         odds = softmax(self.margins([view.vector()])[0], self._temperature)

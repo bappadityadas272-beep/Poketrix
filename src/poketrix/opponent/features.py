@@ -7,6 +7,9 @@ not be computed is NaN, which the learned model treats as missing.
 
 The fields, in this order, are the model's feature vector: adding, removing or reordering one
 makes every saved model stale, and `XgbModel` then refuses to load it.
+
+There is no ladder rating among them (user, 2026-10-15): every ladder game states it, while
+the model runs where none is known (unrated games, the simulator's bots).
 """
 
 from dataclasses import astuple, dataclass, fields
@@ -41,7 +44,6 @@ class DecisionView:
     hazards: float  # layers of entry hazards on its own side
     status_move_revealed: float  # 1 if a move it has shown is a status move
     damaging_share: float  # share of its likely moveset that is damaging moves
-    rating: float = MISSING  # its ladder rating, where the log states one
 
     def vector(self) -> tuple[float, ...]:
         return astuple(self)

@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy
 
 from .dataset import DATASET_FILE, STAYED, Row, load
-from .features import ACTIONS, FEATURES, DecisionView
+from .features import ACTIONS, DecisionView
 from .models import Heuristic, XgbModel, model_paths, softmax
 
 LABELS = {**{action: index for index, action in enumerate(ACTIONS)}, STAYED: len(ACTIONS)}
@@ -149,17 +149,6 @@ def learned(model: XgbModel, temperature: float) -> Predictor:
     return predict
 
 
-def without_rating(predictor: Predictor) -> Predictor:
-    """The predictor where no rating is known: unrated games and the simulator's bots."""
-    column = FEATURES.index("rating")
-
-    def predict(rows: Table) -> numpy.ndarray:
-        x = rows.x.copy()
-        x[:, column] = numpy.nan
-        return predictor(Table(x, rows.y, rows.gen, rows.battle))
-    return predict
-
-
 # --------------------------------------------------------------------------- the report
 
 
@@ -229,7 +218,6 @@ def evaluate(model: XgbModel, temperature: float, data: dict[str, Table]) -> dic
     predictors = {
         "base rates": base_rates(data["train"]), "heuristic-0": heuristic,
         model.version: learned(model, temperature),
-        f"{model.version}, no rating": without_rating(learned(model, temperature)),
     }
     return measure(predictors, data["test"], ("base rates", "heuristic-0"), model.version)
 

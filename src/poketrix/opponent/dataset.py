@@ -117,16 +117,6 @@ def _move_action(event: ev.MoveEvent, dex: Dex) -> str:
 # --------------------------------------------------------------------------- features
 
 
-def ratings(log: str) -> dict[PlayerSlot, float]:
-    """Each player's ladder rating as the log's header states it."""
-    found = {}
-    for line in log.splitlines():
-        parts = line.split("|")
-        if len(parts) > 5 and parts[1] == "player" and parts[5].isdigit():
-            found[PlayerSlot(parts[2])] = float(parts[5])
-    return found
-
-
 def observed(snapshot: TurnSnapshot, observer: PlayerSlot, prior: SetPrior) -> Situation | None:
     """The turn as `observer` would meet it in a game: its active Pokémon has a set (the most
     likely one) and a request offers that set's moves. None when no set can be named."""
@@ -178,13 +168,12 @@ def rows_of(battle: str, log: str) -> list[Row]:
     if not record.snapshots:
         return []
     gen = record.snapshots[0].state.generation
-    prior, dex, rated = load_prior(gen), Dex(gen), ratings(log)
+    prior, dex = load_prior(gen), Dex(gen)
     rows = []
     for snapshot, following in zip(record.snapshots, record.snapshots[1:], strict=False):
         for player, action in actions(following.events, dex, snapshot.events).items():
             view = view_of(snapshot, player, prior)
             if view is not None:
-                view = replace(view, rating=rated.get(player, view.rating))
                 rows.append(Row(battle, int(gen), snapshot.turn, player.value, action,
                                 view.vector()))
     return rows
