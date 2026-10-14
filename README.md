@@ -17,7 +17,8 @@ and an LLM that only ever *explains* already-computed numbers.
 | 4 | Bayesian set uncloaker (Showdown Gen 1–4 Random Battle set pools as priors) | done (cp-04) |
 | 5 | Showdown battle-log parser → `GameState` | done (cp-05) |
 | 6 | Turn engine: a plain state machine, a score-based decision policy, template text behind a guardrail | done (cp-06) |
-| 7 | XGBoost action predictor (needs replay data) | |
+| 7 | Opponent model: XGBoost on real ladder decisions, shown as the "opponent tendency" | done (cp-07) |
+| 8 | Overlay: a local server and a read-only Chrome extension | in progress |
 | — | Knowledge graph / RAG, vision ingestion | deferred |
 
 ## Does the advice win games?
@@ -45,6 +46,25 @@ max-damage player uses Poketrix's own estimate of the opponent's set.
 ```bash
 python -m poketrix analyze battle.log --turn 9   # the engine's reading of one turn of your own log
 ```
+
+## The overlay (read-only)
+
+A side panel in Chrome shows the advice for the battle in front of you: the headline, the top three
+options with their numbers, the opponent's two likeliest sets, the threat, and the opponent tendency
+(what ladder players do in that position; shown for information, never used by the advice).
+
+```bash
+pip install -e ".[ml]"           # NumPy for the opponent tendency (optional: without it the line says so)
+python -m poketrix serve         # listens on 127.0.0.1:8765 only
+```
+
+Then load `extension/` in Chrome (`chrome://extensions` → Developer mode → Load unpacked) and click the
+Poketrix button to open the panel. On `replay.pokemonshowdown.com` it advises from player 1's side,
+turn by turn as the replay plays, which needs no live game.
+
+**Fair play.** Poketrix never sends a choice and never touches your account. **It is off in rated
+battles:** when a live battle is rated, the server computes nothing and the panel says "Poketrix is off
+in rated battles". Advice is available in unrated games, challenges and replays.
 
 ## Setup
 

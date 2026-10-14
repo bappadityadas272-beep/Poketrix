@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Poketrix overlay",
+  "version": "0.1.0",
+  "description": "Read-only battle advice from a local Poketrix server. Never sends a choice. Off in rated battles.",
+  "permissions": ["sidePanel"],
+  "host_permissions": [
+    "https://play.pokemonshowdown.com/*",
+    "https://replay.pokemonshowdown.com/*",
+    "http://127.0.0.1:8765/*"
+  ],
+  "background": {"service_worker": "background.js"},
+  "side_panel": {"default_path": "panel.html"},
+  "action": {"default_title": "Open the Poketrix panel"},
+  "content_scripts": [
+    {
+      "matches": ["https://play.pokemonshowdown.com/*"],
+      "js": ["page.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://play.pokemonshowdown.com/*"],
+      "js": ["relay.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://replay.pokemonshowdown.com/*"],
+      "js": ["replay.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
