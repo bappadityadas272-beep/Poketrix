@@ -104,6 +104,10 @@ class Robustness:
     staleness_elsewhere: Staleness = field(default_factory=Staleness)  # tournaments, challenges
 
 
+def is_ladder_game(log: str) -> bool:
+    return _LADDER_GAME in log.splitlines()
+
+
 def load_replays(gen: Generation | int, directory: Path = REPLAY_DIR) -> Iterator[tuple[str, str]]:
     """(replay id, log) for every downloaded replay of a generation."""
     for path in sorted((directory / f"gen{int(gen)}").glob("*.json")):
@@ -116,7 +120,7 @@ def measure_replays(gen: Generation | int, directory: Path = REPLAY_DIR) -> Robu
     report, prior = Robustness(), load_prior(gen)
     for replay_id, log in load_replays(gen, directory):
         report.replays += 1
-        ladder = _LADDER_GAME in log.splitlines()
+        ladder = is_ladder_game(log)
         report.ladder_games += ladder
         try:
             record = parse_battle(log)
