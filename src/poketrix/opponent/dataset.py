@@ -8,11 +8,15 @@ A spectator's log gives neither player a known set, while the engine needs one f
 Pokémon facing the decider. That Pokémon is given its most likely set under the evidence so
 far, as if its owner were watching: during a game the owner knows the real one.
 
-Rows are left out when the log does not show a free choice:
-- the decider's first event of the turn is not a move it picked: it could not move (asleep,
-  flinched, recharging: the log then hides what was chosen), it continued a locked or two-turn
-  move, it fainted or was dragged out first;
-- the engine could compute nothing for the position (a transformed Pokémon, no known set).
+A decider that fainted before acting, or could not move (asleep, frozen, fully paralysed,
+flinched, infatuated), stayed in: it chose a move, but the log does not say which. Such a row
+is labelled `stay`, so that leaving these turns out does not inflate the switch rate (ruled by
+the user, 2026-10-15). The model is trained on it as attack and utility in the shares its
+generation shows when the move is visible, and scored on it by P(attack) + P(utility).
+
+Rows are left out when the log does not show a free choice: the decider continued a locked or
+two-turn move, recharged, loafed (Truant), was dragged out, or the engine could compute nothing
+for the position (a transformed Pokémon, no known set).
 
 Build it with:  python -m poketrix.opponent.dataset [replay directory] [output file]
 """
@@ -43,6 +47,8 @@ SPLITS = {"train": 0.70, "valid": 0.15, "test": 0.15}
 _OTHER = {PlayerSlot.P1: PlayerSlot.P2, PlayerSlot.P2: PlayerSlot.P1}
 _NO_DEADLINE = Deadline(float("inf"))
 _HIDDEN = "the choice was not shown"  # `actions` marks a side whose turn gives no row
+STAYED = "stay"  # it chose a move, which the log does not show
+_KEPT_FROM_MOVING = frozenset({"slp", "frz", "par", "flinch", "Attract"})  # `cant` reasons
 # Moves that go on for more than one turn, leaving their user no choice meanwhile.
 _LOCKING = frozenset({
     "rollout", "iceball", "outrage", "thrash", "petaldance", "uproar", "bide", "solarbeam",
@@ -56,7 +62,7 @@ class Row:
     gen: int
     turn: int
     player: str
-    action: str  # one of `features.ACTIONS`
+    action: str  # one of `features.ACTIONS`, or `STAYED`
     features: tuple[float, ...]
     split: str = ""
 
@@ -77,8 +83,11 @@ def actions(events: Sequence[ev.Event], dex: Dex,
             seen.setdefault(player, _HIDDEN if locked else _move_action(event, dex))
         elif isinstance(event, ev.SwitchEvent):
             seen.setdefault(event.pokemon.player, _HIDDEN if event.forced else "switch")
-        elif isinstance(event, ev.CantEvent | ev.FaintEvent):
-            seen.setdefault(event.pokemon.player, _HIDDEN)
+        elif isinstance(event, ev.FaintEvent):
+            seen.setdefault(event.pokemon.player, STAYED)
+        elif isinstance(event, ev.CantEvent):
+            stayed = event.reason in _KEPT_FROM_MOVING
+            seen.setdefault(event.pokemon.player, STAYED if stayed else _HIDDEN)
     return {player: action for player, action in seen.items() if action != _HIDDEN}
 
 
@@ -249,14 +258,14 @@ def main() -> None:
     rows, left_out = build(directory)
     save(rows, path)
     print(f"{len(rows)} decisions written to {path}\n")
-    print("| Gen | Split | Battles | Decisions | " + " | ".join(ACTIONS) + " |")
-    print("|-----|-------|---------|-----------|" + "---|" * len(ACTIONS))
+    print("| Gen | Split | Battles | Decisions | " + " | ".join((*ACTIONS, STAYED)) + " |")
+    print("|-----|-------|---------|-----------|" + "---|" * (len(ACTIONS) + 1))
     for gen in sorted({row.gen for row in rows}):
         for name in SPLITS:
             part = [row for row in rows if row.gen == gen and row.split == name]
             chosen = Counter(row.action for row in part)
             shares = " | ".join(f"{chosen[action] / max(1, len(part)):.1%}"
-                                for action in ACTIONS)
+                                for action in (*ACTIONS, STAYED))
             print(f"| {gen} | {name} | {len({row.battle for row in part})} | {len(part)} "
                   f"| {shares} |")
     print("\nReplays left out:", dict(left_out) or "none")
