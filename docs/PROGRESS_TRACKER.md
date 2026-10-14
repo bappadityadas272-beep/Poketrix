@@ -29,7 +29,7 @@ listed below is v2.
 | 13-R / 13-A7 | Ditto fix, same-seed re-run, determinism check, merge | — | **Done** (994 of 994 untouched games identical; `cp-06` at `1446c1d`) |
 | 14-lite | Hygiene, cut to what v1 needs | No | **Done.** A8 with `cp-06`; the repo moved to `C:\dev\Poketrix` (2026-10-14), `.venv` recreated on Python 3.14.5, 910 tests pass, `ruff` clean |
 | 15 | Phase 7, built directly from a pre-decided spec (no proposal stop) | **Yes**, with the results | **Done, approved (ruling 15-R)**, carried out; `cp-07` |
-| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | **In progress** on `task/08-overlay` |
+| 16 | Phase 8 overlay MVP, from a pre-decided spec | **Yes**, with a demo | Built on `task/08-overlay`; **waiting for the demo screenshots** |
 | 17 | v1 wrap-up: README, results, demo, explainer | No | Queued |
 
 The full text is in "▶ ACTIVE — Orders for Claude Code, batch 9". Batch 8's Orders 14 and 15 are replaced by 14-lite and 15 below.
@@ -3339,6 +3339,42 @@ Branch: `task/08-overlay`. A **read-only advisor** for the user's own browser. I
   - Extension: a manual checklist, with screenshots in the tracker.
   - Latency from a line's arrival to the advice shown: p95 under 300 ms on the user's machine.
 - **Then stop with:** the screenshots, a short screen recording (optional), the latency numbers, and the known limits.
+
+#### Order 16 result (2026-10-15): built on `task/08-overlay`; **stopped for the demo** (screenshots come from the user's Chrome)
+
+| Part | What |
+|---|---|
+| Server | `python -m poketrix serve [--port 8765] [--debug-log FILE]`: standard library only, bound to **127.0.0.1**. `POST /line` {room, lines, source} feeds the room's `BattleReader` in arrival order and advises the newest live decision at once; `GET /advice?room=[&turn=N]` returns the panel JSON. Memory only; nothing persisted except the optional debug log |
+| Fair-play guard | `overlay/rooms.py`: a live battle with a `|rated|` line gets **no advice computed at all** and the panel shows "Poketrix is off in rated battles". Replays are exempt (they are over). Tested |
+| Demo mode | Spectator snapshots (replays, watched battles) are advised from p1's side: `advisor/spectator.seen_as` gives p1's Pokémon their likeliest sets and offers switches to every p1 Pokémon seen alive. The dataset uses the same function; it was rebuilt **byte-identical** after the move |
+| Panel | Headline and explanation, top 3 options with their numbers, the opponent's 2 likeliest sets, the threat line, the opponent tendency (xgb-1, labelled "not used by the advice", switch odds over 70% as "70%+"), the engine's time and the time from the line's arrival to the panel showing it |
+| Extension | `extension/` (Manifest V3): host permissions only for `play.pokemonshowdown.com`, `replay.pokemonshowdown.com` and `http://127.0.0.1:8765`. `page.js` (page world) wraps the client's WebSocket and only listens; `relay.js` → `background.js` posts to the server, per room, in order; `replay.js` sends `<replay>.log` once and follows the on-screen turn; `panel.*` is the side panel. No credentials, no choices sent |
+| Tests | `tests/test_overlay.py` (4): 127.0.0.1 only; a fixture battle posted line by line gives exactly `analyze`'s advice and tendency; the rated guard (live off, replay on); bad requests (404, 400). 932 tests pass; `ruff` is clean |
+
+**Latency**, server share of "line arrival → advice ready" (`python -m poketrix.overlay.latency 5`: fixture player logs posted line by line over HTTP,
+337 decisions, xgb-1 tendency included): **p50 10 ms, p95 23 ms, max 149 ms** (target: p95 under 300 ms). The first request after starting
+takes about 230 ms (it loads the prior, the dex and the model). The browser's full figure is shown in the panel footer for every update,
+and goes into the screenshots.
+
+Checked against the running server with a real Gen 4 ladder replay: turn 5 advised from p1's side (Regirock against Gengar: "Rock Slide:
+about 49% of Gengar's remaining HP", tendency "switch 21% · attack 62% · utility 17%"); the same log posted as a live battle → "Poketrix
+is off in rated battles".
+
+**Manual checklist (the user, in Chrome):**
+
+| # | Step | Expected | Result |
+|---|------|----------|--------|
+| 1 | Load `extension/` unpacked; the server is running | The extension loads with no errors | |
+| 2 | Open a replay on `replay.pokemonshowdown.com`, click the Poketrix button | The panel shows p1's advice; the turn follows the replay as it plays | |
+| 3 | Stop the server and reload | "The Poketrix server is not running" | |
+| 4 | An unrated challenge or a random battle against a friend on `play.pokemonshowdown.com` | Player-mode advice at each decision | |
+| 5 | Watch a **rated** live battle | "Poketrix is off in rated battles" | |
+| 6 | Panel footer | "shown N ms after the line arrived" under 300 ms | |
+
+**Known limits.** The live-client hook (step 4) could not be tested here: it needs the user's own game. It listens to the client's
+WebSocket, plain or SockJS frames. In demo mode p1's sets are the likeliest ones under the evidence, not the real ones. The replay turn
+is read from the page's "Turn N" counter; if the page changes, the panel shows turn 1. The port is fixed at 8765 because the manifest
+names it.
 
 ### Order 17: v1 wrap-up (no stop)
 1. **README:** what Poketrix is, a quickstart (install, `analyze`, `serve` + loading the extension), the results tables (calculator oracle,
